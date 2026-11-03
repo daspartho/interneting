@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>interneting</title>
+  <meta name="description" content="a tool / toy for interneting">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="canvas"><div id="world"><svg id="edges"></svg></div></div>
+
+  <div id="bar" hidden>
+    <div class="box">
+      <input id="go" type="text" autocomplete="off" spellcheck="false" placeholder="Find anything here, or go somewhere new">
+      <div class="finds"></div>
+      <div class="heads"></div>
+    </div>
+  </div>
+
+
+
+  <div id="hud">
+    <button id="reset" title="start over">reset</button>
+    <button id="sound" title="sounds on">
+      <svg viewBox="0 0 16 16"><path d="M2.5 6.2h2.3L8 3.6v8.8L4.8 9.8H2.5z"/><path class="on" d="M10.6 6.1a2.7 2.7 0 0 1 0 3.8M12.4 4.4a5.2 5.2 0 0 1 0 7.2"/><path class="off" d="M10.8 6.4l3.2 3.2M14 6.4l-3.2 3.2"/></svg>
+    </button>
+    <button id="help" title="keys (?)">?</button>
+  </div>
+
+  <!-- shown when the canvas can't show sites (see needAddon in app.js) -->
+  <div id="addon" hidden>
+    <div class="card">
+      <h1>a tool / toy for interneting</h1>
+      <p class="need">it needs a small add-on to work in your browser.</p>
+      <p class="newer">it needs the newer add-on: remove yours from <code>chrome://extensions</code>, then add this one.</p>
+      <a class="download" href="extension.zip">download the add-on</a>
+      <ol>
+        <li>unzip it where it can stay.</li>
+        <li>open <code>chrome://extensions</code> <button class="copy">copy</button></li>
+        <li>turn on developer mode.</li>
+        <li>load unpacked: choose the folder.</li>
+      </ol>
+      <p class="then">then come back and it opens by itself.</p>
+      <p class="source"><a href="https://github.com/daspartho/interneting">source</a> · <a href="mailto:hi@partho.world">hi@partho.world</a></p>
+    </div>
+  </div>
+  </div>
+
+  <dl id="keys" hidden>
+      <dt>C</dt><dd>cut</dd>
+      <dt>N</dt><dd>note</dd>
+      <dt>/</dt><dd>search</dd>
+      <dt>F</dt><dd>focus</dd>
+      <dt>R</dt><dd>reload</dd>
+      <dt>X</dt><dd>close</dd>
+      <dt>Z  ⇧Z</dt><dd>undo · redo</dd>
+      <dt>[  ]</dt><dd>back · forward</dd>
+      <dt>?</dt><dd>these keys</dd>
+    </dl>
+
+  <div id="toast"></div>
+  <script src="sound.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

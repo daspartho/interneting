@@ -1,0 +1,438 @@
+:root {
+  --sq: 37.795px; /* a square of the mat: a centimetre at 100% (app.js SQ); sizes on the table are in it */
+  --tab-h: calc(var(--sq) * 0.75); /* a page's tab, above it (app.js NAME) */
+  --tuck: calc(var(--sq) / 8); /* how far a tab goes under its sheet */
+  /* one light, warm surface: a place to collect things from the web */
+  color-scheme: light;
+  --bg: #f3f1ec;
+  --card: #ffffff;
+  --text: #1d1d1f;
+  --muted: #8b8a86;
+  --line: rgba(0, 0, 0, 0.07);
+  --accent: #6f5cf6;
+  --trail: #6f5cf6;
+  --ink: rgba(50, 45, 40, 0.72);
+  /* window shadows, lit from above: a hairline edge, a tight contact shadow,
+     and a wide soft one falling below, like a macOS window over paper */
+  --shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    0 1px 1px rgba(0, 0, 0, 0.04),
+    0 2px 4px -1px rgba(0, 0, 0, 0.05),
+    0 10px 22px -6px rgba(0, 0, 0, 0.1),
+    0 30px 60px -18px rgba(0, 0, 0, 0.2);
+  /* carried: held a little above the table, its shadow further below it */
+  --carried:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    0 4px 6px rgba(0, 0, 0, 0.06),
+    0 24px 44px -10px rgba(0, 0, 0, 0.2),
+    0 64px 110px -28px rgba(0, 0, 0, 0.34);
+  /* a sheet lying flat on the board, lit from above: its edge, and the
+     thinnest shadow where it touches; the one you picked, a firmer edge and
+     raised a little off the board, its shadow softer and wider below it */
+  --paper:
+    0 0 0 0.5px rgba(0, 0, 0, 0.14),
+    0 1px 1px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+  --paper-held:
+    0 0 0 1px rgba(0, 0, 0, 0.34),
+    0 6px 12px rgba(0, 0, 0, 0.1),
+    0 36px 72px -20px rgba(0, 0, 0, 0.46);
+  --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+svg { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+#canvas {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  /* a cutting mat (app.js applyCamera): squares of a real centimetre at 100%,
+     heavier every 5 cm, faint, moving and scaling with what lies on it */
+  --line: 70, 60, 40;
+  --minor: var(--sq); --major: calc(var(--sq) * 5); --mx: 0px; --my: 0px; /* (till the view is first drawn: the first page lies on it) */
+  background-image:
+    linear-gradient(to right, rgba(var(--line), 0.065) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--line), 0.065) 1px, transparent 1px),
+    linear-gradient(to right, rgba(var(--line), calc(0.04 * var(--fine, 1))) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--line), calc(0.04 * var(--fine, 1))) 1px, transparent 1px);
+  background-size: var(--major) var(--major), var(--major) var(--major), var(--minor) var(--minor), var(--minor) var(--minor);
+  background-position: var(--mx) var(--my);
+}
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+body.moving #world { will-change: transform; }
+body.panning #canvas, body.space #canvas { cursor: grabbing; }
+body.space #canvas { cursor: grab; }
+
+/* While the canvas is being dragged, zoomed far out, or something is dropped,
+   pages must not swallow the pointer. */
+body.busy iframe, body.scrolling iframe, body.space iframe, body.dragging iframe, body.overview iframe { pointer-events: none !important; }
+/* only the page you picked (clicked, opened, gone to) takes the pointer: the rest are sheets on the mat, and a scroll over one moves the mat (app.js, scroll and pinch) */
+.node:not(.selected) iframe { pointer-events: none; }
+body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
+
+/* ------------------------------------------------------------------ lines */
+
+/* the lines lie on the table, under the things on it (a line passing a page goes behind it) */
+#edges { position: absolute; left: 0; top: 0; z-index: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+#edges path { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: stroke 0.2s; }
+#edges .clip .line { stroke-dasharray: 2 5; }
+.icon.focus .dot { fill: currentColor; }
+#edges .hot .line { stroke: var(--accent); }
+#edges .way { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; } /* a line is a way to its other end (app.js): easy to take, 14 px across */
+#edges g:hover .line { stroke: var(--accent); }
+
+/* ------------------------------------------------------------------ nodes */
+
+/* things on the board are sheets: square-cornered, lying flat; lifted only while carried */
+.node {
+  position: absolute;
+  isolation: isolate; /* (its tabs go under it, not under the table) */
+  background: var(--card);
+  box-shadow: var(--paper);
+}
+/* reading focus: the page being read stands out; its neighbours fade back */
+.node, #edges g { transition: box-shadow 0.2s, opacity 0.35s var(--ease); }
+body.focusing .node:not(.focused, .on-focused, .beside) { opacity: 0.42; } /* (the page you came from stays as it is: the way back) */
+/* lifted while carried, settling back with a little give when put down;
+   pages and clips only lift their shadow (scaling them would soften text) */
+.node.lifted { box-shadow: var(--carried); transition: box-shadow 0.12s; }
+.note, .image { transition: box-shadow 0.2s, opacity 0.35s var(--ease), transform 0.32s cubic-bezier(0.3, 1.45, 0.5, 1); }
+.note.lifted, .image.lifted { transform: scale(1.03) rotate(-0.6deg); transition: box-shadow 0.12s, transform 0.14s var(--ease); }
+body.focusing #edges g:not(.beside) { opacity: 0.35; } /* (all but the line from the page you came from) */
+/* a press on the page beside the one read goes back to it, never into it */
+body.focusing .node.beside .body { cursor: pointer; }
+body.focusing .node.beside iframe { pointer-events: none; }
+.node.selected { box-shadow: var(--paper-held); }
+
+
+
+/* A page is a sheet. Its name is on a tab of the same paper peeking out of
+   its top, as on a folder, sized with it; the tab is the
+   handle. What you do to it is a key (?), so it has no buttons. */
+.page .body { position: absolute; inset: 0; overflow: hidden; background: #fff; box-shadow: 0 -0.5px 0 rgba(0, 0, 0, 0.22); } /* (its top edge over its tab) */
+.page .body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; color-scheme: normal; }
+.page .body iframe.still { pointer-events: none; } /* a touch wakes the page instead */
+.page.loading .body::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 28%;
+  height: calc(2px / var(--z));
+  background: var(--accent);
+  animation: loading 1.1s var(--ease) infinite;
+}
+.page .arriving {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: var(--muted);
+  font-size: calc(14px / var(--z));
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease);
+}
+.page .arriving span { position: relative; }
+.page .arriving img { position: absolute; right: calc(100% + 8px / var(--z)); top: 50%; translate: 0 -50%; width: calc(18px / var(--z)); height: calc(18px / var(--z)); border-radius: 4px; }
+.page.arrived .arriving { opacity: 0; visibility: hidden; transition: opacity 0.3s var(--ease), visibility 0s 0.3s; }
+@keyframes loading { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+.bar {
+  position: absolute;
+  left: calc(var(--sq) * var(--tab-at, 0.5)); /* stuck on by hand, in from the corner (app.js tabAt) */
+  bottom: 100%;
+  min-height: var(--tab-h);
+  padding: 5px 9px 5px 8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - var(--sq) * var(--tab-at, 0.5));
+  z-index: -1; /* tucked under the sheet, as an index tab stuck to the back of a page */
+  margin-bottom: calc(-1 * var(--tuck));
+  padding-bottom: calc(5px + var(--tuck));
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.1), transparent 9px), var(--tab, var(--card)); /* in the sheet's shade where it goes under */
+  border: 0.5px solid rgba(0, 0, 0, 0.16);
+  border-bottom: 0;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--tab-ink, var(--text)) 60%, transparent);
+  white-space: nowrap;
+  -webkit-user-select: none; user-select: none;
+  cursor: grab;
+}
+.bar .fav { flex: none; width: 13px; height: 13px; border-radius: 3px; }
+/* the address is the page's name */
+.bar .address { flex: 0 1 auto; min-width: min-content; white-space: normal; overflow-wrap: break-word; line-height: 1.3; color: var(--tab-ink, var(--text)); font-weight: 500; } /* wraps at its slashes rather than lose its end */
+/* each level above the page being read is a place (the site, a folder): pointing at one lights it, as a path bar does; a click goes up to it */
+body:not(.overview) .bar .address .up { cursor: pointer; transition: background-color 0.12s; }
+body:not(.overview) .bar .address .up:hover { background: color-mix(in srgb, var(--tab-ink, var(--text)) 14%, transparent); } /* in the page's own ink */
+/* zoomed out, a name is one line no wider than its page: the page itself, its icon standing for its site
+   (a site's front page keeps the site's name; a page with no icon keeps it too, as site/…/page) */
+body.overview .bar .address { flex-shrink: 0; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.overview .bar .address > :is(.between, wbr) { display: none; }
+body.overview .page.has-icon .bar .address > .site { display: none; }
+body.overview .page:not(.has-icon) .bar .address > .after-skip::before { content: '…/'; }
+.node.selected > .bar { border-color: rgba(0, 0, 0, 0.3); }
+/* picked, it comes up off the board to work on, with a little give */
+.node.selected { transition: box-shadow 0.4s cubic-bezier(0.3, 1.45, 0.5, 1), opacity 0.35s var(--ease); }
+.icon {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon:hover { background: rgba(127, 127, 127, 0.16); color: var(--tab-ink, var(--text)); }
+
+/* clips (elements lifted out of pages) and embeds are live too; they move by
+   the small handle underneath, like the bar under a visionOS window */
+.clip, .embed { background: var(--card); }
+.clip iframe, .embed iframe { display: block; width: 100%; height: 100%; border: 0; }
+.embed iframe { background: #000; }
+.grab {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  z-index: 4;
+  width: calc(56px / var(--z));
+  height: calc(18px / var(--z));
+  margin-left: calc(-28px / var(--z));
+  cursor: grab;
+}
+.grab::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 45%;
+  height: calc(5px / var(--z));
+  background: var(--muted);
+  opacity: 0.3;
+  transition: opacity 0.15s, background 0.15s;
+}
+.node:hover .grab::after { opacity: 0.65; }
+.grab:hover::after, body.busy .selected .grab::after { opacity: 1; background: var(--accent); }
+
+.chip {
+  position: absolute;
+  left: 2px;
+  top: 100%;
+  margin-top: calc(6px / var(--z));
+  font-size: calc(11.5px / var(--z)) !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+.chip img { width: calc(12px / var(--z)); height: calc(12px / var(--z)); border-radius: 2px; }
+.chip span { overflow: hidden; text-overflow: ellipsis; }
+.node:hover .chip, .node.selected .chip { opacity: 1; }
+.chip:hover { color: var(--text); }
+
+.image { background: none; cursor: grab; }
+.image.loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(127, 127, 127, 0.14) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.image > img { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; -webkit-user-select: none; user-select: none; }
+
+/* A note is a small sheet of warm paper: thin, lying flat, lit from above.
+   Quotes from pages are cards. */
+.note { cursor: grab; }
+.note:not(.quote) {
+  background: #fbf1c7;
+  border-radius: 2px 2px 3px 3px;
+  box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.18), 0 1px 1.5px rgba(80, 60, 10, 0.12), 0 6px 14px -6px rgba(80, 60, 10, 0.28);
+}
+.note.selected:not(.quote) { box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.25), 0 2px 3px rgba(80, 60, 10, 0.14), 0 12px 24px -8px rgba(80, 60, 10, 0.32); }
+.note.quote { background: var(--card); }
+.note.lifted:not(.quote) { box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.2), 0 4px 6px rgba(80, 60, 10, 0.12), 0 22px 40px -10px rgba(80, 60, 10, 0.34); }
+.note .text {
+  padding: 12px 14px 14px;
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.45;
+  color: #3a3220;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+  min-height: 1.5em;
+}
+.note .text:focus { cursor: text; }
+/* an address written in a note is a door; solid when the place is already on the canvas */
+.note .door { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.note .door.here { text-decoration-style: solid; }
+.note .text:not(:focus) .door { cursor: pointer; }
+.note .text:not(:focus) .door:hover { text-decoration-color: currentColor; }
+/* a note's first line can say what kind of note it is ("collect") */
+.note.kind .text::first-line { font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 13px; font-variant-caps: all-small-caps; letter-spacing: 0.06em; color: color-mix(in srgb, currentColor 55%, transparent); }
+.note.quote .text { font-size: 16px; border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); margin: 12px 0 12px 12px; padding: 0 16px 0 12px; }
+
+/* resize from any edge or corner */
+.rz { position: absolute; z-index: 3; --t: calc(8px / var(--z)); --o: calc(-4px / var(--z)); }
+.rz-n, .rz-s { left: var(--t); right: var(--t); height: var(--t); cursor: ns-resize; }
+.rz-n { top: var(--o); }
+.rz-s { bottom: var(--o); }
+.rz-e, .rz-w { top: var(--t); bottom: var(--t); width: var(--t); cursor: ew-resize; }
+.rz-e { right: var(--o); }
+.rz-w { left: var(--o); }
+.rz-ne, .rz-nw, .rz-se, .rz-sw { width: calc(var(--t) * 1.75); height: calc(var(--t) * 1.75); }
+.rz-nw { left: var(--o); top: var(--o); cursor: nwse-resize; }
+.rz-se { right: var(--o); bottom: var(--o); cursor: nwse-resize; }
+.rz-ne { right: var(--o); top: var(--o); cursor: nesw-resize; }
+.rz-sw { left: var(--o); bottom: var(--o); cursor: nesw-resize; }
+.grab { z-index: 4; }
+
+/* -------------------------------------------------------------- chrome */
+
+#bar { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); width: min(580px, calc(100vw - 32px)); z-index: 20; }
+#bar.home { top: 40%; transform: translate(-50%, -50%); }
+#bar[hidden] { display: none; }
+#bar .box { background: var(--card); box-shadow: var(--shadow), 0 24px 60px -20px rgba(0, 0, 0, 0.18); padding: 6px; animation: rise 0.22s var(--ease); }
+@keyframes rise { from { opacity: 0; transform: translateY(6px) scale(0.985); } }
+#bar input { all: unset; box-sizing: border-box; width: 100%; padding: 11px 12px; font-size: 16px; }
+#bar input::placeholder { color: var(--muted); }
+#bar .finds { display: flex; flex-direction: column; padding: 0 0 2px; }
+#bar .finds:empty { display: none; }
+#bar .finds.recent::before { content: "Recently here"; color: var(--muted); font-size: 12px; padding: 6px 12px 4px; }
+#bar .find { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+#bar .find.chosen { background: rgba(127, 127, 127, 0.11); }
+#bar .find .fav, #bar .find .glyph { width: 16px; height: 16px; flex: none; border-radius: 3px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+#bar .find .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bar .find .where { flex: none; color: var(--muted); font-size: 12px; max-width: 55%; overflow-wrap: anywhere; text-align: right; }
+/* words found inside a page: a line under its name (past the icon and the gap), the words themselves in the name's colour */
+#bar .find:has(.said) { flex-wrap: wrap; row-gap: 0; }
+#bar .find .said { flex-basis: 100%; box-sizing: border-box; padding-left: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+#bar .find .said mark { background: none; color: var(--text); }
+#bar .heads { display: none; flex-wrap: wrap; gap: 6px; padding: 2px 8px 9px; }
+#bar.home .heads { display: flex; }
+#bar .heads .lead { width: 100%; color: var(--muted); font-size: 12px; padding: 4px 2px 2px; }
+#bar .heads button { border: 0; padding: 6px 11px; font-size: 12.5px; background: rgba(127, 127, 127, 0.11); cursor: pointer; }
+#bar .heads button:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+#hud { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 6px; z-index: 10; }
+/* in groups, the most used nearest the corner: what you do with pages (cut, note, go), then sound, then the canvas as a whole, starting over furthest of all */
+#hud #help { font-size: 14px; font-weight: 500; }
+#hud button {
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+#hud button:hover { color: var(--text); }
+/* a tool picked up (the ✂, a note to place): lit until it is put down */
+/* placing a note: wherever is pointed at takes it, pages too (the canvas, not the page, gets the click) */
+body.placing-note, body.placing-note * { cursor: copy !important; }
+body.placing-note .node iframe { pointer-events: none; }
+#hud svg { width: 15px; height: 15px; }
+#sound .off, #sound.off .on { display: none; }
+#sound.off .off { display: inline; }
+
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translate(-50%, 8px);
+  padding: 7px 12px;
+  background: var(--card);
+  box-shadow: var(--paper-held), 0 4px 14px rgba(0, 0, 0, 0.08);
+  color: var(--text);
+  font-size: 12.5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s var(--ease);
+  z-index: 30;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#toast button { margin-left: 10px; padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+
+/* the corner close button on clips, images, embeds and notes */
+.node:not(.page) > .icon.close {
+  position: absolute;
+  top: calc(-10px / var(--z));
+  right: calc(-10px / var(--z));
+  z-index: 5;
+  width: calc(22px / var(--z));
+  height: calc(22px / var(--z));
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.node:not(.page) > .icon.close svg { width: calc(12px / var(--z)); height: calc(12px / var(--z)); }
+.node:not(.page):hover > .icon.close, .node.selected:not(.page) > .icon.close { opacity: 1; }
+
+
+/* Without the add-on: what this is, and how to add it (see needAddon in app.js) */
+body.addon #world, body.addon #hud, body.addon #bar { display: none; } /* the mat stays: the sheet lies on it */
+#addon { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; overflow: auto; }
+#addon[hidden] { display: none; }
+#addon .card { width: min(calc(var(--sq) * 11), 100%); box-sizing: border-box; padding: calc(var(--sq) * 0.75); background: var(--card); box-shadow: var(--paper); font-size: 14px; line-height: 1.5; } /* a sheet lying on the mat, as a page does */
+#addon h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+#addon p { margin: 0 0 10px; }
+#addon .need, #addon .then, #addon .source { color: var(--muted); }
+#addon .source { margin: 14px 0 0; }
+#addon .source a { color: inherit; }
+#addon .newer, #addon.older .need { display: none; }
+#addon.older .newer { display: block; }
+#addon .download { display: inline-block; margin: 6px 0 4px; padding: 8px 16px; background: var(--text); color: var(--card); font-weight: 500; text-decoration: none; } /* in ink, as the rest of the table */
+#addon .download:hover { background: #000; }
+#addon ol { margin: 14px 0 12px; padding-left: 22px; }
+#addon li { margin: 0 0 6px; padding-left: 2px; }
+#addon li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+#addon code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 6px; background: rgba(127, 127, 127, 0.11); user-select: all; }
+#addon .copy { margin-left: 4px; padding: 2px 9px; border: 0; background: rgba(127, 127, 127, 0.11); font-size: 12px; cursor: pointer; }
+#addon .copy:hover { background: rgba(127, 127, 127, 0.18); }
+
+/* the keys (?): a sheet laid just above the tools, at their right edge */
+#keys { position: fixed; right: 14px; bottom: 52px; z-index: 30; display: grid; grid-template-columns: auto auto; gap: 6px 18px; margin: 0; padding: 18px 22px; background: var(--card); box-shadow: var(--shadow), 0 24px 60px -20px rgba(0, 0, 0, 0.18); font-size: 13px; line-height: 1.4; }
+#keys[hidden] { display: none; }
+#keys dt { font-weight: 600; white-space: pre; text-align: right; }
+#keys dd { margin: 0; color: var(--muted); }

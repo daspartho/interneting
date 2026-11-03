@@ -1,0 +1,4 @@
+# made by build.sh
+site/
+extension/inject.js
+.DS_Store

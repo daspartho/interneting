@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "interneting",
+  "version": "0.1",
+  "description": "lets interneting show sites. it acts only in interneting's own tabs.",
+  "minimum_chrome_version": "128",
+  "permissions": ["declarativeNetRequestWithHostAccess", "scripting", "webNavigation", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": {}
+}
