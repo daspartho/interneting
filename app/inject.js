@@ -18,7 +18,7 @@
   const ancestors = location.ancestorOrigins
   const APP = ancestors?.[ancestors.length - 1]
   if (!APP) return
-  const TRAIL = '124, 92, 255'
+  const TRAIL = '147, 53, 43' // the thread's madder red (style.css --thread)
 
   // ---------------------------------------------------------------- URLs
 
@@ -420,36 +420,40 @@
     tracked.set(child, els)
     addStyle()
     if (link) for (const el of els) el.setAttribute('data-cb-trail', '')
+    else drawCuts() // (a piece cut out: its cut line stays drawn on the page)
     if (held) drawHeld() // what's framed may just have been cut
   }
 
-  // What a thing on the canvas came from, shown while it is hovered: a link
-  // followed, its tint deepened; a cut, one cut line round all of it, as it
-  // was cut (one piece, however many elements).
+  // What a thing on the canvas came from. A link followed is tinted; hovered,
+  // its tint deepens. A piece cut out leaves a cut line round where it was,
+  // as on a pattern, always (one line round all of it, as it was cut, however
+  // many elements); hovered, the line is drawn firmer.
   const flashed = new Set()
-  let flashRoot = null
+  let cutsRoot = null
   function flash(child, on) {
     const els = tracked.get(child) || []
     if (els[0]?.hasAttribute('data-cb-trail')) return els.forEach(el => el.toggleAttribute('data-cb-flash', on))
     on ? flashed.add(child) : flashed.delete(child)
-    if (!flashRoot) {
-      const host = document.createElement('div')
-      flashRoot = host.attachShadow({ mode: 'open' })
-      document.documentElement.append(host)
-      addEventListener('scroll', () => flashed.size && drawFlash(), true)
-    }
-    drawFlash()
+    drawCuts()
   }
-  function drawFlash() {
-    flashRoot.replaceChildren()
-    for (const child of flashed) {
-      const rs = (tracked.get(child) || []).map(el => el.getBoundingClientRect())
-      if (!rs.length) continue
+  const CUT_KEPT = 'outline:1.2px dashed rgba(60,50,40,.55);outline-offset:0'
+  function drawCuts() {
+    if (!cutsRoot) {
+      const host = document.createElement('div')
+      cutsRoot = host.attachShadow({ mode: 'open' })
+      document.documentElement.append(host)
+      addEventListener('scroll', drawCuts, true)
+      addEventListener('resize', drawCuts)
+    }
+    cutsRoot.replaceChildren()
+    for (const [child, els] of tracked) {
+      if (!els.length || els[0].hasAttribute('data-cb-trail')) continue
+      const rs = els.map(el => el.getBoundingClientRect())
       const x = Math.min(...rs.map(r => r.left)) - PAD
       const y = Math.min(...rs.map(r => r.top)) - PAD
       const line = document.createElement('div')
-      line.style.cssText = `position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;${CUT_LINE};left:${x}px;top:${y}px;width:${Math.max(...rs.map(r => r.right)) + PAD - x}px;height:${Math.max(...rs.map(r => r.bottom)) + PAD - y}px`
-      flashRoot.append(line)
+      line.style.cssText = `position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;${flashed.has(child) ? CUT_LINE : CUT_KEPT};left:${x}px;top:${y}px;width:${Math.max(...rs.map(r => r.right)) + PAD - x}px;height:${Math.max(...rs.map(r => r.bottom)) + PAD - y}px`
+      cutsRoot.append(line)
     }
   }
 
@@ -509,9 +513,19 @@
       if (!/^(Alt|Control|Meta|Shift)$/.test(event.key)) pressed = Date.now() // a key it keeps is a press in it (⌘ alone isn't)
       return
     }
+    // ours alone: the page's own listeners never hear it (its F, its /),
+    // nor the key coming back up
     event.preventDefault()
+    event.stopImmediatePropagation()
+    taken.add(event.code)
     if (name === 'c') startClip() // the ✂ cuts in the frame it is pressed in
     else send('key', { key: name })
+  }, true)
+  const taken = new Set() // keys down that were the canvas's
+  addEventListener('keyup', event => {
+    if (!taken.delete(event.code)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
   }, true)
   // a mouse's back and forward buttons are the trail
   addEventListener('mouseup', event => {
@@ -1974,6 +1988,7 @@
       const els = tracked.get(d.child) || []
       tracked.delete(d.child)
       for (const el of els) if (![...tracked.values()].some(t => t.includes(el))) el.removeAttribute('data-cb-trail')
+      if (cutsRoot) drawCuts() // (its cut line goes with it)
     } else if (d.type === 'flash') {
       flash(d.child, d.on)
     } else if (d.type === 'reveal') tracked.get(d.child)?.[0].scrollIntoView({ behavior: 'smooth', block: 'center' })

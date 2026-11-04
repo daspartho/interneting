@@ -69,6 +69,7 @@ function needAddon() {
   const box = document.querySelector('#addon')
   box.querySelector('.download').download = `${name}.zip`
   box.querySelector('.copy').addEventListener('click', () => navigator.clipboard.writeText('chrome://extensions').then(() => toast('copied')))
+  box.classList.toggle('other', !navigator.userAgentData?.brands?.some(b => b.brand === 'Chromium')) // (the add-on is for chromium browsers only, for now)
   box.hidden = false
   document.body.classList.add('addon')
   return new Promise(done => {
@@ -113,10 +114,6 @@ const PAGE_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-popups a
 const ALLOW = 'autoplay; fullscreen; clipboard-write; encrypted-media; picture-in-picture'
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
-const ICONS = {
-  close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
-}
-
 // ------------------------------------------------------------------ helpers
 
 const $ = s => document.querySelector(s)
@@ -131,17 +128,6 @@ function el(tag, cls, text) {
   if (cls) e.className = cls
   if (text != null) e.textContent = text
   return e
-}
-function iconButton(name, title, onClick) {
-  const b = el('button', `icon ${name}`)
-  b.title = title
-  b.innerHTML = `<svg viewBox="0 0 16 16">${ICONS[name]}</svg>`
-  b.addEventListener('pointerdown', e => e.stopPropagation())
-  b.addEventListener('click', e => {
-    e.stopPropagation()
-    onClick()
-  })
-  return b
 }
 const uid = () => Math.random().toString(36).slice(2, 9)
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
@@ -587,7 +573,7 @@ function heavy(n) {
 // a clip made by an earlier version (a window onto a page), or whose content
 // didn't come back from storage, can't be shown; nor can a page without a web
 // address (one taken from a page before addresses were checked)
-const lost = n => (n.type === 'clip' && !n.html) || n.src === 'content' || (n.type === 'page' && !webOnly(n.url))
+const lost = n => (n.type === 'clip' && !n.html) || n.src === 'content' || ((n.type === 'page' || n.type === 'ghost') && !webOnly(n.url))
 
 // ------------------------------------------------------------------- camera
 // While the camera moves, the world is one GPU layer that is moved and scaled
@@ -630,6 +616,8 @@ function applyCamera() {
     document.body.classList.remove('moving')
     settleZoom()
     tend()
+    hoverAtPointer()
+    if (selected && state.nodes[selected] && !inView(state.nodes[selected])) select(null) // (what you picked, out of sight, is let go)
   }, STILL)
   if (lastZ === null) settleZoom()
   if (cam.z !== lastZ) {
@@ -642,10 +630,14 @@ let lastGoodCam = { x: 0, y: 0, z: 1 }
 const toWorld = (sx, sy) => ({ x: (sx - cam.x) / cam.z, y: (sy - cam.y) / cam.z })
 const toScreen = (wx, wy) => ({ x: wx * cam.z + cam.x, y: wy * cam.z + cam.y })
 // A point inside a node's frame (page coordinates) on the canvas.
+// (a page's frame lies within its paper: PRINT.side in from its left edge)
 function frameToWorld(id, fx, fy) {
   const n = state.nodes[id]
-  return { x: n.x + fx, y: n.y + fy }
+  return { x: n.x + fx + (n.type === 'page' ? PRINT.side : 0), y: n.y + fy }
 }
+// A page's paper round the site printed on it, at its sides and foot (its
+// head is NAME; style.css --side)
+const PRINT = { side: 9 }
 
 function stopCamera() {
   cancelAnimationFrame(camAnim)
@@ -820,16 +812,17 @@ function framing(n, o) {
 // What is kept in view beside a page you go to: the page you come to it
 // from, if a line joins them (a link followed, or back along one), else the
 // one it was opened from, else the newest page opened from it (the walk goes
-// on there); only one that lies beside it, so in the band. When none can be
-// (a narrow window), the line from where it came from is still kept, coming
-// in from the edge.
+// on there); only one that lies beside it, so in the band, and near: where a
+// page opened from it is laid (within LAID), not one moved far off. When none
+// can be, the line from where it came from is still kept, coming in from the
+// edge.
 function keepBeside(id, from) {
   const n = state.nodes[id]
   const line = o => state.edges.find(e => (e.from === o && e.to === id) || (e.from === id && e.to === o))
   const joined = o => o && o !== id && state.nodes[o] && !views.get(o)?.closing && line(o)
   const origin = state.edges.find(e => e.to === id && state.nodes[e.from])?.from
   const opened = state.edges.filter(e => e.from === id && state.nodes[e.to]?.type === 'page').map(e => state.nodes[e.to]).sort((a, b) => (b.created || 0) - (a.created || 0)).map(c => c.id)
-  const o = [from, origin, ...opened].find(o => joined(o) && inBand(n, state.nodes[o]))
+  const o = [from, origin, ...opened].find(o => joined(o) && inBand(n, state.nodes[o]) && apart(n, state.nodes[o]) <= LAID)
   const thread = o || [from, origin].find(joined)
   beside = thread ? { id: o || null, edge: line(thread).id } : null
 }
@@ -840,6 +833,8 @@ function inBand(n, o) {
   const level = Math.min(n.y + n.h, o.y + o.h) - Math.max(n.y, o.y)
   return (gap >= 0 && level >= DESK.least) || over(n, o)
 }
+// how far apart two things lie, edge to edge (0 if they overlap)
+const apart = (n, o) => Math.max(0, n.x - (o.x + o.w), o.x - (n.x + n.w), n.y - (o.y + o.h), o.y - (n.y + n.h))
 // whether `o` lies above or below `n`, overlapping it across
 const over = (n, o) => Math.max(n.y - (o.y + o.h), o.y - (n.y + n.h)) >= 0 && Math.min(n.x + n.w, o.x + o.w) - Math.max(n.x, o.x) >= DESK.least
 // The page kept beside the one read is as it is, not faded with the rest;
@@ -904,6 +899,19 @@ function unfocus() {
 // The page a key means: the one under the pointer, else the one the keys are
 // in (`from`), else the one nearest the middle of the view.
 let hovered = null // the thing under the pointer (the canvas sees no moves inside a page, but sees it come in)
+function hover(id) {
+  if (hovered === id) return
+  if (hovered) views.get(hovered)?.el.classList.remove('under')
+  if (hovered && state.nodes[hovered]) hot(hovered, false)
+  hovered = id
+  if (id) views.get(id)?.el.classList.add('under')
+  if (id) hot(id, true)
+}
+// what is under the pointer once things have moved under it (the browser
+// tells the canvas only when the pointer moves)
+function hoverAtPointer() {
+  if (pointerAt) hover(document.elementFromPoint(pointerAt.x, pointerAt.y)?.closest('.node')?.dataset.id ?? null)
+}
 function pageNear(from) {
   if (state.nodes[hovered]?.type === 'page') return hovered
   if (from) return from
@@ -941,7 +949,7 @@ const PLACE = { gap: sq(12), room: sq(5) } // between places: far enough apart t
 // A page opened from another and the page it came from, as sheets on a desk
 const DESK = {
   gap: sq(1), // between them: a square of the mat, enough for the line from the link to read as a line across it
-  show: sq(2), // of the page you came from, in view while you read: enough of its content to know it, not a strip
+  show: sq(1), // of the page you came from, in view while you read: enough to know it is there, the page read stays the one in front of you
   least: sq(1 / 3), // less of it than this in view reads as a stray line at the window's edge, not a page
 }
 // Every distance a hand sets down is in squares of the mat (MAT_CM, a
@@ -1318,16 +1326,56 @@ function addEdge(data) {
 function removeNode(id) {
   const gone = state.nodes[id]
   if (!gone) return
+  const ghost = gone.type === 'page' && between(id) ? addNode({ type: 'ghost', url: gone.url, title: gone.title, favicon: gone.favicon, bg: gone.bg, z: gone.z, x: Math.round(gone.x + (gone.w - GHOST.w) / 2), y: Math.round(gone.y + (gone.h - GHOST.h) / 2), ...GHOST, was: { w: gone.w, h: gone.h } }) : null
+  drop(id, ghost?.id)
+  if (ghost) appear(ghost.id)
+  for (let g; (g = Object.values(state.nodes).find(n => n.type === 'ghost' && !between(n.id))); ) drop(g.id) // (one left at an end goes)
+  drawEdges()
+  knowDoors()
+  commit({ kind: 'close', node: id, url: gone.url, title: gone.title })
+}
+// A thing off the canvas. Its lines go with it, or to `into`, which takes its
+// place (and its mark in the page they come from).
+function drop(id, into) {
   unmark(id)
   for (const note of notesOn(id)) unstick(note)
-  state.edges = state.edges.filter(e => e.from !== id && e.to !== id)
+  state.edges = into ? state.edges.map(e => (e.from === id ? { ...e, from: into } : e.to === id ? { ...e, to: into } : e)) : state.edges.filter(e => e.from !== id && e.to !== id)
   delete state.nodes[id]
   unmount(id)
   if (selected === id) selected = null
   if (focused === id) setFocused(null)
+  if (into) for (const e of state.edges) if (e.to === into) markTaken(e.from, new Set([into]))
+}
+// A page closed from the middle of a trail (one led to it and it led on)
+// leaves its name where it lay, so the trail still shows how you came to what
+// came after. A ghost stands between two things: left at an end, it goes. A
+// click opens the page again where it was.
+const between = id => state.edges.some(e => e.to === id && state.nodes[e.from]) && state.edges.some(e => e.from === id && state.nodes[e.to])
+// Pulled off its pin, a scrap of the page's margin tears round the pin, its
+// address printed on it.
+const GHOST = { w: sq(6), h: sq(0.75), pin: sq(0.4) }
+function mountGhost(node, view) {
+  const pin = el('span', 'pin')
+  const fav = el('img', 'fav')
+  fav.onerror = () => fav.remove()
+  fav.src = node.favicon || iconOf(node.url)
+  pin.append(fav)
+  const scrap = el('span', 'scrap', addressOf(node.url))
+  scrap.style.setProperty('--tear', `${(tabAt(node.id) - 0.5) * 8}deg`) // (each tears its own way)
+  view.el.title = node.title || addressOf(node.url)
+  view.el.append(scrap, pin)
+  paintTab(node, view)
+}
+function reopen(id) {
+  const g = state.nodes[id]
+  const w = g.was?.w || pageSize().w
+  const h = g.was?.h || pageSize().h
+  const page = addNode({ type: 'page', url: g.url, title: g.title, favicon: g.favicon, bg: g.bg, x: Math.round(g.x + (g.w - w) / 2), y: Math.round(g.y + (g.h - h) / 2), w, h })
+  drop(id, page.id)
   drawEdges()
-  knowDoors()
-  commit({ kind: 'close', node: id, url: gone?.url, title: gone?.title })
+  appear(page.id)
+  commit({ kind: 'open', node: page.id, url: page.url })
+  travel(page.id)
 }
 // Starting over: the canvas empties in one step, and Undo brings it all back
 // (the canvas's history keeps it either way).
@@ -1367,8 +1415,9 @@ function close(id) {
   }
   if (reduceMotion) return gone()
   // back into where it came from (the page it was opened or cut from), the
-  // way it grew out of it; things with no origin just shrink where they are
-  const to = from ? exitPoint(from, centreOf(from), centreOf(n), 0) : centreOf(n)
+  // way it grew out of it; things with no origin just shrink where they are,
+  // as does a page that leaves a ghost (into its ghost)
+  const to = from && !(n.type === 'page' && between(id)) ? exitPoint(from, centreOf(from), centreOf(n), 0) : centreOf(n)
   v.el.style.pointerEvents = 'none'
   v.el.animate(
     [
@@ -1408,7 +1457,7 @@ function select(id) {
 // (so space and the arrows scroll it); one you leave gives them back to the
 // canvas. Never while you're typing in the canvas's own find box or a note.
 function keysTo(id) {
-  const frame = state.nodes[id]?.type === 'page' && views.get(id)?.frame
+  const frame = state.nodes[id]?.type === 'page' && views.get(id)?.listening && views.get(id).frame
   if (!frame) return keysToCanvas()
   const active = document.activeElement
   if (active === input ? !bar.hidden : isEditing(active)) return
@@ -1448,15 +1497,13 @@ function mount(node) {
   const view = { el: root, history: [], docReady: false, restored: restoring }
   views.set(node.id, view)
   if (node.type === 'page') mountPage(node, view)
-  else {
-    // everything that isn't a page closes from a small button at its corner
-    root.append(iconButton('close', 'Close (X)', () => close(node.id)))
-    if (node.type === 'clip') mountClip(node, view)
-    else if (node.type === 'embed') mountEmbed(node, view)
-    else if (node.type === 'note') mountNote(node, view)
-    else if (node.type === 'image') mountImage(node, view)
-  }
-  const sides = node.type === 'note' || node.type === 'clip' ? ['e', 'w'] : node.type === 'image' ? ['ne', 'nw', 'se', 'sw'] : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+  else if (node.type === 'clip') mountClip(node, view)
+  else if (node.type === 'embed') mountEmbed(node, view)
+  else if (node.type === 'note') mountNote(node, view)
+  else if (node.type === 'image') mountImage(node, view)
+  else if (node.type === 'ghost') mountGhost(node, view)
+  root.dataset.id = node.id
+  const sides = node.type === 'ghost' ? [] : node.type === 'note' || node.type === 'clip' ? ['e', 'w'] : node.type === 'image' ? ['ne', 'nw', 'se', 'sw'] : ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
   for (const dir of sides) {
     const handle = el('div', `rz rz-${dir}`)
     handle.addEventListener('pointerdown', e => startResize(e, node.id, dir))
@@ -1464,8 +1511,8 @@ function mount(node) {
   }
   root.addEventListener('pointerdown', e => nodePointerDown(e, node.id))
   root.addEventListener('dblclick', e => nodeDoubleClick(e, node.id))
-  root.addEventListener('pointerenter', () => (hovered = node.id, hot(node.id, true)))
-  root.addEventListener('pointerleave', () => (hovered === node.id && (hovered = null), hot(node.id, false)))
+  root.addEventListener('pointerenter', () => hover(node.id))
+  root.addEventListener('pointerleave', () => hovered === node.id && hover(null))
   world.append(root)
   place(node)
   updateName(node.id)
@@ -1481,6 +1528,7 @@ function unmount(id) {
 function place(node) {
   const v = views.get(node.id)
   const auto = node.type === 'note'
+  if (auto) v.el.classList.toggle('stuck', !!node.on) // (on something, its bottom curls off it: style.css)
   Object.assign(v.el.style, { left: `${node.x}px`, top: `${node.y}px`, width: `${node.w}px`, height: auto ? '' : `${node.h}px`, zIndex: node.z })
   // a note is as tall as its words; when the canvas is restored (at start, on
   // undo) notes are measured together once all is in place: one layout of
@@ -1500,17 +1548,18 @@ function grabHandle() {
   return g
 }
 
-// A page is a sheet. Its name is on a tab peeking out of its top, the
-// handle for moving it.
-// The tabs are of the page's own paper, in its ink (as last seen: a page
-// coming back has them before it loads).
+// A page is a printout: a sheet of paper, the site printed on it, one line
+// printed at its head as a browser prints one, its title at the left and its
+// address at the right; held to the board by a pin through its head, its
+// site's icon. The head is where you hold it.
+// Its pin's head is in the page's own colour (as last seen: a page coming
+// back has it before it loads).
 const COLOUR = /^rgba?\([\d., ]+\)$/
 function paintTab(n, v) {
   v.el.style.setProperty('--tab', COLOUR.test(n.bg) ? n.bg : '')
-  v.el.style.setProperty('--tab-ink', COLOUR.test(n.ink) ? n.ink : '')
 }
-// Where a page's name tab is stuck on: in from its left corner by hand, half
-// a square give or take a quarter, the same for a page each time (from its id).
+// Where a page's pin goes in: in from its left corner by hand, half a square
+// give or take a quarter, the same for a page each time (from its id).
 const tabAt = id => 0.25 + 0.5 * ([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000) / 1000
 function mountPage(node, view) {
   const name = el('div', 'bar')
@@ -1520,7 +1569,10 @@ function mountPage(node, view) {
   fav.onload = () => ((fav.style.visibility = ''), views.get(node.id)?.el.classList.add('has-icon')) // (zoomed out, the icon stands for the site)
   fav.onerror = () => ((fav.style.visibility = 'hidden'), views.get(node.id)?.el.classList.remove('has-icon'))
   const address = el('div', 'address') // its levels above the page are places to go up to (style.css)
-  name.append(fav, address)
+  const pin = el('span', 'pin') // (the site's icon is its pin: style.css)
+  pin.append(fav)
+  const title = el('div', 'title')
+  name.append(pin, title, address)
   const body = el('div', 'body')
   const kept = restoring && keptCopies.get(node.id)
   // restored out of reach: it loads when it comes within reach (tend), by the
@@ -1537,7 +1589,7 @@ function mountPage(node, view) {
   body.append(...(f ? [f] : []), arriving)
   view.el.append(name, body)
   paintTab(node, view)
-  Object.assign(view, { frame: f, body, fav, address, when })
+  Object.assign(view, { frame: f, body, fav, title, address, when })
   view.el.classList.add('loading')
   if (kept) showCopy(node.id, kept)
   touch(node.id)
@@ -1581,7 +1633,13 @@ function liveFrame(node) {
     setTimeout(untell, 10_000) // (a page that never finishes loading)
   }
   told ? told.then(go) : go()
-  f.addEventListener('load', () => setLoading(node.id, false))
+  // whether the page in it hands the keys over (inject.js): a page that
+  // couldn't load (the browser's own error page) has nothing in it that does
+  f.addEventListener('load', () => {
+    const v = views.get(node.id)
+    if (v) [v.listening, v.heard] = [!!v.heard, false]
+    setLoading(node.id, false)
+  })
   return f
 }
 
@@ -1799,6 +1857,7 @@ function mountEmbed(node, view) {
 }
 function mountNote(node, view) {
   if (node.url) view.el.classList.add('quote')
+  view.el.style.setProperty('--tilt', `${(tabAt(node.id) - 0.5) * 6}deg`) // (stuck down by hand: never quite straight)
   const text = el('div', 'text', node.text || '')
   text.contentEditable = 'plaintext-only'
   text.spellcheck = false
@@ -1932,14 +1991,15 @@ function fitContent(n) {
   } else if (n.ratio) n.h = Math.round(n.w * n.ratio)
 }
 
-// The source line under clips, images and quotes: click it to go to the page.
+// Clips, images and quotes are taped down where you put them, with washi in
+// the colour of the page they came from, their source typed on it: click it
+// to go to the page. Each strip is stuck on a little differently (its id).
 function sourceChip(node) {
   const chip = el('button', 'chip')
-  const fav = el('img')
-  fav.src = node.favicon || iconOf(node.url)
-  fav.onerror = () => fav.remove()
-  chip.append(fav, el('span', null, addressOf(node.url)))
+  chip.append(el('span', null, 'from ' + hostOf(node.url))) // (the site; the whole address on hover)
   chip.title = node.url
+  if (COLOUR.test(node.tape)) chip.style.setProperty('--washi', node.tape)
+  chip.style.setProperty('--tilt', `${(tabAt(node.id) - 0.5) * 6}deg`)
   chip.addEventListener('pointerdown', e => e.stopPropagation())
   chip.addEventListener('click', e => {
     e.stopPropagation()
@@ -1988,7 +2048,11 @@ function updateName(id) {
   if (v.named !== n.url) {
     v.named = n.url
     v.address.replaceChildren(...addressParts(n.url))
+    v.address.title = (() => { try { return decodeURI(n.url) } catch { return n.url } })() // (the whole of it, where one line can't hold it)
   }
+  // its title printed at its head, as a browser prints a page (its address until it says one)
+  const title = n.title || addressOf(n.url)
+  if (v.title.textContent !== title) v.title.textContent = title
   if (n.favicon && v.fav.getAttribute('src') !== n.favicon) v.fav.src = n.favicon
   // doors in notes say whether this place is here and what it is called
   if (v.door !== `${n.url} ${n.title}`) {
@@ -2140,7 +2204,7 @@ function renderEdges() {
     if (!d) {
       const group = document.createElementNS(SVG, 'g')
       group.dataset.id = edge.id
-      group.innerHTML = '<path class="line"/><path class="way"/>' // (way: where a pointer takes the line, wider than it)
+      group.innerHTML = '<path class="shade"/><path class="line"/><path class="way"/>' // (shade: on the board below it; way: where a pointer takes the thread, wider than it)
       edgesSvg.append(group)
       if (!reduceMotion && performance.now() - (bornAt.get(edge.id) || 0) < 300) group.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 380, delay: 140, fill: 'backwards' })
       d = { group }
@@ -2148,8 +2212,8 @@ function renderEdges() {
     }
     const cls = `${edge.kind}${hotNodes.has(edge.from) || hotNodes.has(edge.to) ? ' hot' : ''}${beside?.edge === edge.id ? ' beside' : ''}`
     if (d.cls !== cls) d.group.setAttribute('class', (d.cls = cls))
-    const line = `M${g.x1},${g.y1} L${g.x2},${g.y2}`
-    if (d.line !== line) for (const path of d.group.querySelectorAll('.line, .way')) path.setAttribute('d', (d.line = line))
+    const line = `M${g.x1},${g.y1} Q${g.mx},${g.my} ${g.x2},${g.y2}`
+    if (d.line !== line) for (const path of d.group.querySelectorAll('path')) path.setAttribute('d', (d.line = line))
   }
   for (const [id, d] of drawn) {
     if (seen.has(id)) continue
@@ -2157,28 +2221,24 @@ function renderEdges() {
     drawn.delete(id)
   }
 }
-// From edge to edge, along the line between their middles: it touches the
-// sheets themselves (a page's name above it is written on the mat, not part
-// of the sheet). A link followed to a page laid beside its own runs straight across from
-// the line you were reading (the link's height in its page when followed,
-// `linkY`) into the page it opened, when that is beside it at that height.
+// A thread is wound round pins: from the pin of the page a link was followed
+// in to the pin of the page it led to (a page's pin is in its top margin; a
+// ghost keeps its pin). A piece is taped at its top edge: its thread runs
+// back from there to its page's pin. Under its own weight a thread sags a
+// little, a fiftieth of its length at most a quarter square, each its own.
+function pinOf(n) {
+  if (n.type === 'page') return { x: n.x + SQ * tabAt(n.id), y: n.y - NAME / 2 }
+  if (n.type === 'ghost') return { x: n.x + GHOST.pin, y: n.y + n.h / 2 }
+  return { x: n.x + n.w / 2, y: n.y } // (where its tape is)
+}
 function geometry(edge) {
   const from = state.nodes[edge.from] && shownAt(state.nodes[edge.from])
   const to = state.nodes[edge.to] && shownAt(state.nodes[edge.to])
   if (!from || !to) return null
-  const y = from.y + edge.linkY
-  if (edge.linkY != null && Math.max(to.x - (from.x + from.w), from.x - (to.x + to.w)) > 0 && y >= to.y + DESK.least && y <= to.y + to.h - DESK.least) {
-    const right = to.x > from.x
-    return { x1: right ? from.x + from.w : from.x, y1: y, x2: right ? to.x : to.x + to.w, y2: y }
-  }
-  const a = from
-  const b = to
-  const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 }
-  const cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 }
-  const p1 = exitPoint(a, ca, cb, 0)
-  const p2 = exitPoint(b, cb, ca, 0)
-  const apart = (p2.x - p1.x) * (cb.x - ca.x) + (p2.y - p1.y) * (cb.y - ca.y) > 0 // (overlapping, there is nothing between them to draw)
-  return apart ? { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y } : null
+  const a = pinOf(from)
+  const b = pinOf(to)
+  const sag = Math.min(SQ / 4, Math.hypot(b.x - a.x, b.y - a.y) / 50) * (0.8 + 0.4 * tabAt(edge.id))
+  return { x1: a.x, y1: a.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 + sag, x2: b.x, y2: b.y }
 }
 function exitPoint(n, from, to, gap) {
   const dx = to.x - from.x
@@ -2240,6 +2300,18 @@ function openBeside(parentId, d) {
     return existing.to
   }
   const at = d.rect ? frameToWorld(parentId, d.rect.x + d.rect.w, d.rect.y + d.rect.h / 2) : { x: parent.x + parent.w, y: parent.y + 40 }
+  // a link to a place already on the canvas: a line to that page, not a
+  // second one (one line between two pages, whichever way it was first walked)
+  const there = pageAt(d.url, parent)
+  if (there) {
+    if (!state.edges.some(e => (e.from === parentId && e.to === there.id) || (e.from === there.id && e.to === parentId))) {
+      addEdge({ from: parentId, to: there.id, kind, url: d.url, fromUrl: parent.url, linkText: d.text || undefined, linkY: Math.round(at.y - parent.y) })
+      commit({ kind: 'link', from: parentId, node: there.id, url: d.url })
+    }
+    if (d.req && state.edges.some(e => e.from === parentId && e.to === there.id)) post(parentId, { type: 'track', child: there.id, req: d.req, link: true })
+    goToPage(there.id, d.quiet)
+    return there.id
+  }
   const spot = spotBeside(parent, pageSize(), at, d.rect && at.y)
   if (parent.type === 'page') cameFrom.set(d.url, tellFrom(d.url, parent.url))
   const child = addNode({ type: 'page', url: d.url, title: d.text || '', ...spot })
@@ -2296,7 +2368,7 @@ function takeOut(sourceId, data, rect, size, { stay } = {}) {
   const spot = spotFrom(src, size, from.y)
   spot.x += byHand(HAND / 2) // (set down by hand, as a page is)
   spot.y += byHand(HAND / 2)
-  const node = addNode({ url: src.url, title: src.title, favicon: src.favicon, ...data, ...spot })
+  const node = addNode({ url: src.url, title: src.title, favicon: src.favicon, tape: COLOUR.test(src.bg) ? src.bg : undefined, ...data, ...spot })
   addEdge({ from: sourceId, to: node.id, kind: 'clip', fromUrl: src.url, selector: data.selector })
   if (data.selector) post(sourceId, { type: 'track', child: node.id, selector: data.selector })
   if (rect) liftFrom(node.id, from)
@@ -2392,7 +2464,7 @@ function nodePointerDown(e, id) {
   beginGesture(e, { kind: 'move', node: id, x0: n.x, y0: n.y, to: door?.dataset.url })
 }
 function nodeDoubleClick(e, id) {
-  if (e.target.closest('.icon, .chip, .door') || (cam.z >= OVERVIEW_Z && e.target.closest('.up'))) return // (a way up, where the levels are)
+  if (e.target.closest('.chip, .door') || (cam.z >= OVERVIEW_Z && e.target.closest('.up'))) return // (a way up, where the levels are)
   const n = state.nodes[id]
   if (e.target.closest('.bar') || n.type === 'image' || cam.z < OVERVIEW_Z) focusNode(id)
 }
@@ -2465,15 +2537,25 @@ addEventListener('pointermove', e => {
     n.x = Math.round(gesture.x0 + dx / cam.z)
     n.y = Math.round(gesture.y0 + dy / cam.z)
   } else resize(n, gesture, dx / cam.z, dy / cam.z)
+  placing(n)
   place(n)
   carry(n)
   drawEdges()
 })
+// The squares things are placed by show round what you're placing, as far
+// as it reaches and a little more, while you place it (style.css #canvas).
+function placing(n) {
+  const c = toScreen(n.x + n.w / 2, n.y + n.h / 2)
+  canvas.style.setProperty('--gx', `${c.x}px`)
+  canvas.style.setProperty('--gy', `${c.y}px`)
+  canvas.style.setProperty('--gr', `${Math.max(n.w, n.h) * cam.z * 0.75 + SQ * 4 * cam.z}px`)
+  document.body.classList.add('placing')
+}
 addEventListener('pointerup', e => {
   if (!gesture || e.pointerId !== gesture.id) return
   const g = gesture
   gesture = null
-  document.body.classList.remove('busy', 'panning')
+  document.body.classList.remove('busy', 'panning', 'placing')
   if (g.kind === 'pan' && !g.moved) {
     select(null)
     endFocus()
@@ -2484,6 +2566,7 @@ addEventListener('pointerup', e => {
   if (g.lifted) views.get(g.node)?.el.classList.remove('lifted')
   const at = state.nodes[g.node]
   if (g.kind === 'move' && !g.moved && g.to) at?.type === 'note' ? throughDoor(g.node, g.to, e.metaKey || e.ctrlKey) : climb(g.node, g.to, e.metaKey || e.ctrlKey)
+  else if (g.kind === 'move' && !g.moved && at?.type === 'ghost') reopen(g.node)
   else if (g.kind === 'move' && !g.moved && at?.type === 'note') {
     const t = views.get(g.node).text
     t.focus()
@@ -2593,14 +2676,15 @@ addEventListener('scroll', () => {
 // What the browser does, which all of this follows: it sends a scroll (the
 // fingers' and the glide after) to what it began on, the canvas or one page's
 // frame, and a page only while the pointer is over it.
-// So only the page you picked (clicked, opened, gone to) takes the pointer;
-// every other page is a sheet on the mat (style.css). A scroll is what it
-// began on's until it is over:
-//   on the page you picked: it scrolls that.
-//   anywhere else: it pans the mat. The page you picked takes no pointer
-//     meanwhile, so it doesn't catch the scroll moving under the fingers, nor
-//     one begun while the mat still glides, until the hand moves the pointer
-//     (aiming at something new).
+// So a scroll goes to what it begins over, as a Mac's scroll goes to the
+// window under the pointer, and is that's until it is over:
+//   over a page: it scrolls the page (the page under the pointer takes it;
+//     style.css).
+//   anywhere else: it pans the mat. No page takes the pointer meanwhile, so
+//     none catches the scroll moving under the fingers, nor one begun while
+//     the mat still glides, until the hand moves the pointer (aiming at
+//     something new).
+//   zoomed far out (overview), where pages are pictures: it pans the mat.
 // A pinch anywhere zooms the mat, about the pointer (so what it began on stays
 // under it), and past a zoom limit springs back when it is over.
 canvas.addEventListener('wheel', e => {
@@ -2618,6 +2702,7 @@ function scrolled(onMat) {
 function scrollOver() {
   clearTimeout(scrollEnd)
   document.body.classList.remove('scrolling')
+  hoverAtPointer()
   springBack()
 }
 // the hand moving the pointer (not the browser saying where it is now that
@@ -2670,7 +2755,7 @@ const COMMANDS = {
   '/': { run: () => openBar() },
   f: { run: from => { const id = pageNear(from); if (id) focusNode(id) } }, // read it (F again: back)
   r: { run: from => { const id = pageNear(from); if (id) reload(id) } }, // load it again
-  x: { run: from => { const id = (state.nodes[hovered] && hovered) || from || selected || pageNear(); if (id) close(id) } }, // put it away, as its × does (Z brings it back)
+  x: { run: from => { const id = (state.nodes[hovered] && hovered) || from || selected || pageNear(); if (id) close(id) } }, // put away what is under the pointer (Z brings it back)
   // ⌘+ ⌘− ⌘0 are the browser's zoom: here they zoom the canvas (else the
   // browser would scale the whole app, tools and all). Not on the keys sheet:
   // zooming is the trackpad's.
@@ -2769,7 +2854,6 @@ addEventListener('message', e => {
       n.title = d.title || n.title
       n.favicon = d.favicon || n.favicon
       if (COLOUR.test(d.bg)) n.bg = d.bg
-      if (COLOUR.test(d.ink)) n.ink = d.ink
       paintTab(n, v)
       updateName(id)
       setLoading(id, false)
@@ -2790,6 +2874,7 @@ addEventListener('message', e => {
       v.pageText = { url: d.url, text: String(d.text) }
       break
     case 'hello': // a page starting is told the canvas's commands, which it hands over when pressed in it
+      v.heard = v.listening = true
       if (cutting) post(id, { type: 'clip-start', quiet: true }) // (the ✂ in hand: this page shows what to cut too)
       post(id, { type: 'keys', keys: PAGE_KEYS })
       if (id === focused) keysTo(id) // the page you're reading, arrived: the keys it was given while loading
@@ -2903,9 +2988,22 @@ function releaseHolds() {
   if (gesture) return
   space = false
   dragging = null
-  document.body.classList.remove('space', 'dragging', 'busy', 'panning')
+  document.body.classList.remove('space', 'dragging', 'busy', 'panning', 'placing')
 }
 addEventListener('blur', releaseHolds)
+// A press in a page (the canvas sees only its keys leave for the page's
+// frame): that page is the one picked, as a click on its name picks it.
+// Unless nothing in it hands the keys over (a page that couldn't load):
+// they come back, so X and the rest still work.
+addEventListener('blur', () => setTimeout(() => {
+  const f = document.activeElement
+  if (f?.tagName !== 'IFRAME' || !document.hasFocus()) return
+  const id = f.closest('.node')?.dataset.id
+  const v = views.get(id)
+  if (!v || v.frame !== f) return
+  if (state.nodes[id].type === 'page' && !v.listening) keysToCanvas()
+  else if (navigator.userActivation?.isActive) select(id), front(id)
+}))
 addEventListener('pointermove', e => {
   if (!e.buttons && !space) releaseHolds()
 }, { passive: true })

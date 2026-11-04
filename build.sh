@@ -13,6 +13,7 @@ cp app/inject.js extension/inject.js
 rm -rf site
 mkdir site
 for f in index.html app.js style.css sound.js inject.js bangs.json tlds.txt suffixes.txt; do cp "app/$f" site/; done
+cp -R app/fonts site/ # (DM Mono, the printed type: OFL, its licence beside it)
 
 # the zip holds one folder, named as the add-on
 tmp=$(mktemp -d)

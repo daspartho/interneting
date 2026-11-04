@@ -1,42 +1,48 @@
+@font-face { font-family: "DM Mono"; src: url(fonts/dm-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(fonts/dm-mono-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
 :root {
   --sq: 37.795px; /* a square of the mat: a centimetre at 100% (app.js SQ); sizes on the table are in it */
-  --tab-h: calc(var(--sq) * 0.75); /* a page's tab, above it (app.js NAME) */
-  --tuck: calc(var(--sq) / 8); /* how far a tab goes under its sheet */
-  /* one light, warm surface: a place to collect things from the web */
+  --tab-h: calc(var(--sq) * 0.75); /* a page's head: its pin, its title and address printed (app.js NAME) */
+  --side: 9px; /* a page's paper at its sides and foot (app.js PRINT) */
+  --print: #fffefb; /* the paper a page is printed on */
+  /* one light, warm surface: paper, a place to collect things from the web */
   color-scheme: light;
-  --bg: #f3f1ec;
+  --bg: #f4f0e8;
+  --warm: 90, 78, 65; /* shadows, edges, threads' shade: warm grey-brown, never black */
+  --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace; /* what is printed: addresses, sources */
+  --thread: #93352b; /* a link followed: a madder-red thread, pin to pin */
+  --cotton: #a39276; /* a piece cut from a page: a linen thread back to it, lighter than the red */
   --card: #ffffff;
   --text: #1d1d1f;
   --muted: #8b8a86;
   --line: rgba(0, 0, 0, 0.07);
-  --accent: #6f5cf6;
-  --trail: #6f5cf6;
+  --accent: #9a3a2c;
   --ink: rgba(50, 45, 40, 0.72);
   /* window shadows, lit from above: a hairline edge, a tight contact shadow,
      and a wide soft one falling below, like a macOS window over paper */
   --shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.1),
-    0 1px 1px rgba(0, 0, 0, 0.04),
-    0 2px 4px -1px rgba(0, 0, 0, 0.05),
-    0 10px 22px -6px rgba(0, 0, 0, 0.1),
-    0 30px 60px -18px rgba(0, 0, 0, 0.2);
+    0 0 0 0.5px rgba(var(--warm), 0.1),
+    0 1px 1px rgba(var(--warm), 0.04),
+    0 2px 4px -1px rgba(var(--warm), 0.05),
+    0 10px 22px -6px rgba(var(--warm), 0.1),
+    0 30px 60px -18px rgba(var(--warm), 0.2);
   /* carried: held a little above the table, its shadow further below it */
   --carried:
-    0 0 0 0.5px rgba(0, 0, 0, 0.1),
-    0 4px 6px rgba(0, 0, 0, 0.06),
-    0 24px 44px -10px rgba(0, 0, 0, 0.2),
-    0 64px 110px -28px rgba(0, 0, 0, 0.34);
+    0 0 0 0.5px rgba(var(--warm), 0.1),
+    0 4px 6px rgba(var(--warm), 0.06),
+    0 24px 44px -10px rgba(var(--warm), 0.2),
+    0 64px 110px -28px rgba(var(--warm), 0.34);
   /* a sheet lying flat on the board, lit from above: its edge, and the
      thinnest shadow where it touches; the one you picked, a firmer edge and
      raised a little off the board, its shadow softer and wider below it */
   --paper:
-    0 0 0 0.5px rgba(0, 0, 0, 0.14),
-    0 1px 1px rgba(0, 0, 0, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.05);
+    0 0 0 0.5px rgba(var(--warm), 0.14),
+    0 1px 1px rgba(var(--warm), 0.05),
+    0 1px 3px rgba(var(--warm), 0.05);
   --paper-held:
-    0 0 0 1px rgba(0, 0, 0, 0.34),
-    0 6px 12px rgba(0, 0, 0, 0.1),
-    0 36px 72px -20px rgba(0, 0, 0, 0.46);
+    0 0 0 0.5px rgba(var(--warm), 0.14),
+    0 6px 12px rgba(var(--warm), 0.1),
+    0 36px 72px -20px rgba(var(--warm), 0.46);
   --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
   --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
 }
@@ -59,18 +65,30 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round
   inset: 0;
   overflow: hidden;
   touch-action: none;
-  /* a cutting mat (app.js applyCamera): squares of a real centimetre at 100%,
-     heavier every 5 cm, faint, moving and scaling with what lies on it */
+  /* paper (app.js applyCamera): a fine grain that moves with what lies on it.
+     The squares things are placed by show only while you place one, round it
+     (--gx, --gy: where it is on the screen), fading out as it lands. */
   --line: 70, 60, 40;
-  --minor: var(--sq); --major: calc(var(--sq) * 5); --mx: 0px; --my: 0px; /* (till the view is first drawn: the first page lies on it) */
-  background-image:
-    linear-gradient(to right, rgba(var(--line), 0.065) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(var(--line), 0.065) 1px, transparent 1px),
-    linear-gradient(to right, rgba(var(--line), calc(0.04 * var(--fine, 1))) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(var(--line), calc(0.04 * var(--fine, 1))) 1px, transparent 1px);
-  background-size: var(--major) var(--major), var(--major) var(--major), var(--minor) var(--minor), var(--minor) var(--minor);
+  --minor: var(--sq); --mx: 0px; --my: 0px; /* (till the view is first drawn: the first page lies on it) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .3 0 0 0 0 .25 0 0 0 .13 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
   background-position: var(--mx) var(--my);
 }
+#canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease);
+  background-image:
+    linear-gradient(to right, rgba(var(--line), calc(0.09 * var(--fine, 1))) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--line), calc(0.09 * var(--fine, 1))) 1px, transparent 1px);
+  background-size: var(--minor) var(--minor);
+  background-position: var(--mx) var(--my);
+  -webkit-mask-image: radial-gradient(circle var(--gr, 320px) at var(--gx, 50%) var(--gy, 50%), #000 30%, transparent);
+  mask-image: radial-gradient(circle var(--gr, 320px) at var(--gx, 50%) var(--gy, 50%), #000 30%, transparent);
+}
+body.placing #canvas::before { opacity: 1; transition-duration: 0.12s; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 body.moving #world { will-change: transform; }
 body.panning #canvas, body.space #canvas { cursor: grabbing; }
@@ -79,20 +97,24 @@ body.space #canvas { cursor: grab; }
 /* While the canvas is being dragged, zoomed far out, or something is dropped,
    pages must not swallow the pointer. */
 body.busy iframe, body.scrolling iframe, body.space iframe, body.dragging iframe, body.overview iframe { pointer-events: none !important; }
-/* only the page you picked (clicked, opened, gone to) takes the pointer: the rest are sheets on the mat, and a scroll over one moves the mat (app.js, scroll and pinch) */
-.node:not(.selected) iframe { pointer-events: none; }
+/* the page under the pointer takes it (a scroll over it scrolls it); a piece takes it once picked (app.js, scroll and pinch) */
+.node:not(.selected, .page.under) iframe { pointer-events: none; }
 body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
 
 /* ------------------------------------------------------------------ lines */
 
-/* the lines lie on the table, under the things on it (a line passing a page goes behind it) */
+/* A link followed is a thread wound from pin to pin, a cut piece a lighter
+   one back to its page (app.js renderEdges): over the board, under what's
+   on it; its shade falls on the board below it. */
 #edges { position: absolute; left: 0; top: 0; z-index: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
-#edges path { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: stroke 0.2s; }
-#edges .clip .line { stroke-dasharray: 2 5; }
-.icon.focus .dot { fill: currentColor; }
-#edges .hot .line { stroke: var(--accent); }
-#edges .way { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; } /* a line is a way to its other end (app.js): easy to take, 14 px across */
-#edges g:hover .line { stroke: var(--accent); }
+#edges path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: stroke 0.2s; }
+#edges .line { stroke: var(--thread); stroke-width: 1.6; }
+#edges .shade { stroke: rgba(var(--warm), 0.2); stroke-width: 2.4; translate: 2px 3px; }
+#edges .clip .line { stroke: var(--cotton); stroke-width: 1.3; }
+/* what's under the pointer: its threads drawn firmer, each in its own colour */
+#edges .hot .line, #edges g:hover .line { stroke-width: 2.2; }
+#edges .clip.hot .line, #edges .clip:hover .line { stroke: #8a7a5f; }
+#edges .way { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; } /* a thread is a way to its other end (app.js): easy to take, 14 px across */
 
 /* ------------------------------------------------------------------ nodes */
 
@@ -105,7 +127,7 @@ body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
 }
 /* reading focus: the page being read stands out; its neighbours fade back */
 .node, #edges g { transition: box-shadow 0.2s, opacity 0.35s var(--ease); }
-body.focusing .node:not(.focused, .on-focused, .beside) { opacity: 0.42; } /* (the page you came from stays as it is: the way back) */
+body.focusing .node:not(.focused, .on-focused, .beside) { opacity: 0.62; } /* (the page you came from stays as it is: the way back) */
 /* lifted while carried, settling back with a little give when put down;
    pages and clips only lift their shadow (scaling them would soften text) */
 .node.lifted { box-shadow: var(--carried); transition: box-shadow 0.12s; }
@@ -119,10 +141,18 @@ body.focusing .node.beside iframe { pointer-events: none; }
 
 
 
-/* A page is a sheet. Its name is on a tab of the same paper peeking out of
-   its top, as on a folder, sized with it; the tab is the
-   handle. What you do to it is a key (?), so it has no buttons. */
-.page .body { position: absolute; inset: 0; overflow: hidden; background: #fff; box-shadow: 0 -0.5px 0 rgba(0, 0, 0, 0.22); } /* (its top edge over its tab) */
+/* A page is a printout of a site: a sheet of paper with the site printed on
+   it, one line printed at its head as a browser prints one, its title at the
+   left and its address at the right; the head is where you hold it. One thing
+   holds it to the board: its site's own icon, a pin through its head. What
+   you do to it is a key (?), so it has no buttons. The sheet's shadow is drawn
+   round head and sheet as one, each half cut at the seam so none falls
+   between them. */
+.page { box-shadow: none; background: var(--print); }
+.page::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; box-shadow: var(--paper); clip-path: inset(0 -200px -200px -200px); transition: box-shadow 0.2s; }
+.page.selected::before { box-shadow: var(--paper-held); transition: box-shadow 0.4s cubic-bezier(0.3, 1.45, 0.5, 1); }
+.page.lifted::before { box-shadow: var(--carried); transition: box-shadow 0.12s; }
+.page .body { position: absolute; inset: 0 var(--side) var(--side); overflow: hidden; background: #fff; box-shadow: 0 0 0 0.5px rgba(var(--warm), 0.12); } /* the site, printed within the paper */
 .page .body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; color-scheme: normal; }
 .page .body iframe.still { pointer-events: none; } /* a touch wakes the page instead */
 .page.loading .body::before {
@@ -155,53 +185,62 @@ body.focusing .node.beside iframe { pointer-events: none; }
 @keyframes loading { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
 .bar {
   position: absolute;
-  left: calc(var(--sq) * var(--tab-at, 0.5)); /* stuck on by hand, in from the corner (app.js tabAt) */
+  left: 0;
+  right: 0;
   bottom: 100%;
   min-height: var(--tab-h);
-  padding: 5px 9px 5px 8px;
+  padding: 4px 9px 4px calc(var(--sq) * var(--tab-at, 0.5)); /* the pin goes in by hand, in from the corner (app.js tabAt) */
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  max-width: calc(100% - var(--sq) * var(--tab-at, 0.5));
-  z-index: -1; /* tucked under the sheet, as an index tab stuck to the back of a page */
-  margin-bottom: calc(-1 * var(--tuck));
-  padding-bottom: calc(5px + var(--tuck));
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.1), transparent 9px), var(--tab, var(--card)); /* in the sheet's shade where it goes under */
-  border: 0.5px solid rgba(0, 0, 0, 0.16);
-  border-bottom: 0;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
-  font-size: 12px;
-  color: color-mix(in srgb, var(--tab-ink, var(--text)) 60%, transparent);
+  background: var(--print);
+  box-shadow: var(--paper);
+  clip-path: inset(-200px -200px 0 -200px);
+  font: 10.5px/1.3 var(--mono);
+  color: rgba(var(--warm), 0.82);
   white-space: nowrap;
   -webkit-user-select: none; user-select: none;
   cursor: grab;
 }
-.bar .fav { flex: none; width: 13px; height: 13px; border-radius: 3px; }
+.selected > .bar { box-shadow: var(--paper-held); }
+.lifted > .bar { box-shadow: var(--carried); }
+/* the pin: the site's icon on a domed head in the page's colour, pushed into the board */
+.pin {
+  flex: none;
+  position: relative;
+  width: 17px;
+  height: 17px;
+  margin-left: -8.5px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 46%), var(--tab, #e8e2d6);
+  box-shadow: inset 0 -1.5px 2.5px rgba(0, 0, 0, 0.26), 0 0 0 0.5px rgba(0, 0, 0, 0.28), 1.5px 2.5px 2px rgba(var(--warm), 0.4);
+  transition: transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.pin .fav { width: 11px; height: 11px; border-radius: 2px; }
+/* picked up: the page is off its pin, which stays in the board under it; the margin shows the hole, the pin's head seen through it */
+.selected > .bar .pin { transform: scale(0.34); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
+.selected > .bar .pin .fav { opacity: 0; }
+/* carried: the pin is out, in your fingers, with the page; set down, it's pushed back in */
+.lifted > .bar .pin { transform: translate(-3px, -12px); box-shadow: inset 0 -1.5px 2.5px rgba(0, 0, 0, 0.26), 0 0 0 0.5px rgba(0, 0, 0, 0.28), 6px 13px 7px rgba(var(--warm), 0.3); transition: transform 0.12s var(--ease), box-shadow 0.12s; }
 /* the address is the page's name */
-.bar .address { flex: 0 1 auto; min-width: min-content; white-space: normal; overflow-wrap: break-word; line-height: 1.3; color: var(--tab-ink, var(--text)); font-weight: 500; } /* wraps at its slashes rather than lose its end */
+/* the title takes what room there is; the address, at the right, up to half: each ends in … if it can't fit (the whole address on hover) */
+.bar .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .address { flex: 0 1 auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(var(--warm), 0.62); }
 /* each level above the page being read is a place (the site, a folder): pointing at one lights it, as a path bar does; a click goes up to it */
 body:not(.overview) .bar .address .up { cursor: pointer; transition: background-color 0.12s; }
-body:not(.overview) .bar .address .up:hover { background: color-mix(in srgb, var(--tab-ink, var(--text)) 14%, transparent); } /* in the page's own ink */
+body:not(.overview) .bar .address .up:hover { background: rgba(var(--warm), 0.12); }
 /* zoomed out, a name is one line no wider than its page: the page itself, its icon standing for its site
    (a site's front page keeps the site's name; a page with no icon keeps it too, as site/…/page) */
 body.overview .bar .address { flex-shrink: 0; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.overview .bar .address > :is(.between, wbr) { display: none; }
 body.overview .page.has-icon .bar .address > .site { display: none; }
 body.overview .page:not(.has-icon) .bar .address > .after-skip::before { content: '…/'; }
-.node.selected > .bar { border-color: rgba(0, 0, 0, 0.3); }
 /* picked, it comes up off the board to work on, with a little give */
 .node.selected { transition: box-shadow 0.4s cubic-bezier(0.3, 1.45, 0.5, 1), opacity 0.35s var(--ease); }
-.icon {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.icon:hover { background: rgba(127, 127, 127, 0.16); color: var(--tab-ink, var(--text)); }
 
 /* clips (elements lifted out of pages) and embeds are live too; they move by
    the small handle underneath, like the bar under a visionOS window */
@@ -232,30 +271,31 @@ body.overview .page:not(.has-icon) .bar .address > .after-skip::before { content
 .node:hover .grab::after { opacity: 0.65; }
 .grab:hover::after, body.busy .selected .grab::after { opacity: 1; background: var(--accent); }
 
+/* washi: holds a piece down where you put it, in its page's colour, its source typed on it (app.js sourceChip) */
 .chip {
   position: absolute;
-  left: 2px;
-  top: 100%;
-  margin-top: calc(6px / var(--z));
-  font-size: calc(11.5px / var(--z)) !important;
+  left: 50%;
+  top: -9px;
+  z-index: 5;
+  height: 18px;
+  max-width: calc(100% - 12px);
+  padding: 0 11px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 0;
   border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 11.5px;
+  translate: -50% 0;
+  rotate: var(--tilt, 0deg);
+  background: color-mix(in srgb, var(--washi, #d9b877) 42%, #f7f0e1); /* washi is pale: a light tint of its page's colour, dark or light */
+  opacity: 0.92;
+  color: #4a4034;
+  font: 9.5px/1 var(--mono);
   white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.15s;
+  clip-path: polygon(3% 0, 97% 0, 100% 22%, 97.5% 48%, 100% 74%, 97% 100%, 3% 100%, 0 76%, 2.5% 50%, 0 24%); /* torn ends */
   cursor: pointer;
+  transition: opacity 0.15s;
 }
-.chip img { width: calc(12px / var(--z)); height: calc(12px / var(--z)); border-radius: 2px; }
 .chip span { overflow: hidden; text-overflow: ellipsis; }
-.node:hover .chip, .node.selected .chip { opacity: 1; }
-.chip:hover { color: var(--text); }
+.chip:hover { opacity: 1; }
 
 .image { background: none; cursor: grab; }
 .image.loading::after {
@@ -271,11 +311,14 @@ body.overview .page:not(.has-icon) .bar .address > .after-skip::before { content
 /* A note is a small sheet of warm paper: thin, lying flat, lit from above.
    Quotes from pages are cards. */
 .note { cursor: grab; }
+.note { rotate: var(--tilt, 0deg); transform-origin: 50% 0; } /* stuck down by hand, never quite straight; by its top edge */
 .note:not(.quote) {
-  background: #fbf1c7;
-  border-radius: 2px 2px 3px 3px;
-  box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.18), 0 1px 1.5px rgba(80, 60, 10, 0.12), 0 6px 14px -6px rgba(80, 60, 10, 0.28);
+  background: linear-gradient(180deg, #f8edc0 0, #fbf1c7 18%);
+  border-radius: 1px 1px 2px 2px;
+  box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.18), 0 1px 1.5px rgba(80, 60, 10, 0.12);
 }
+/* on something (a page, a piece), a sticky note's bottom lifts off it: its shadow falls under that edge only */
+.note.stuck:not(.quote) { box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.18), 0 1px 1px rgba(80, 60, 10, 0.1), 0 11px 8px -8px rgba(80, 60, 10, 0.42); }
 .note.selected:not(.quote) { box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.25), 0 2px 3px rgba(80, 60, 10, 0.14), 0 12px 24px -8px rgba(80, 60, 10, 0.32); }
 .note.quote { background: var(--card); }
 .note.lifted:not(.quote) { box-shadow: 0 0 0 0.5px rgba(120, 95, 20, 0.2), 0 4px 6px rgba(80, 60, 10, 0.12), 0 22px 40px -10px rgba(80, 60, 10, 0.34); }
@@ -342,31 +385,27 @@ body.overview .page:not(.has-icon) .bar .address > .after-skip::before { content
 #bar .heads button { border: 0; padding: 6px 11px; font-size: 12.5px; background: rgba(127, 127, 127, 0.11); cursor: pointer; }
 #bar .heads button:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 
-#hud { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 6px; z-index: 10; }
+/* the corner: a few words printed on the table, as the addresses are; no box */
+#hud { position: fixed; right: 16px; bottom: 12px; display: flex; gap: 14px; z-index: 10; }
 /* in groups, the most used nearest the corner: what you do with pages (cut, note, go), then sound, then the canvas as a whole, starting over furthest of all */
-#hud #help { font-size: 14px; font-weight: 500; }
+#hud #help { font-weight: 500; }
 #hud button {
-  height: 32px;
-  min-width: 32px;
-  padding: 0 10px;
+  padding: 2px 0;
   border: 0;
-  background: var(--card);
-  box-shadow: 0 0 0 1px var(--line), var(--shadow);
-  color: var(--muted);
-  font-size: 12px;
+  background: none;
+  color: rgba(var(--warm), 0.62);
+  font: 11px var(--mono);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   display: grid;
   place-items: center;
 }
-#hud button:hover { color: var(--text); }
+#hud button:hover { color: rgb(var(--warm)); }
+#sound.off { text-decoration: line-through; text-decoration-thickness: 1px; } /* sounds off */
 /* a tool picked up (the ✂, a note to place): lit until it is put down */
 /* placing a note: wherever is pointed at takes it, pages too (the canvas, not the page, gets the click) */
 body.placing-note, body.placing-note * { cursor: copy !important; }
 body.placing-note .node iframe { pointer-events: none; }
-#hud svg { width: 15px; height: 15px; }
-#sound .off, #sound.off .on { display: none; }
-#sound.off .off { display: inline; }
 
 
 #toast {
@@ -392,22 +431,6 @@ body.placing-note .node iframe { pointer-events: none; }
 }
 
 
-/* the corner close button on clips, images, embeds and notes */
-.node:not(.page) > .icon.close {
-  position: absolute;
-  top: calc(-10px / var(--z));
-  right: calc(-10px / var(--z));
-  z-index: 5;
-  width: calc(22px / var(--z));
-  height: calc(22px / var(--z));
-  border-radius: 50%;
-  background: var(--card);
-  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.12);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.node:not(.page) > .icon.close svg { width: calc(12px / var(--z)); height: calc(12px / var(--z)); }
-.node:not(.page):hover > .icon.close, .node.selected:not(.page) > .icon.close { opacity: 1; }
 
 
 /* Without the add-on: what this is, and how to add it (see needAddon in app.js) */
@@ -422,6 +445,8 @@ body.addon #world, body.addon #hud, body.addon #bar { display: none; } /* the ma
 #addon .source a { color: inherit; }
 #addon .newer, #addon.older .need { display: none; }
 #addon.older .newer { display: block; }
+#addon .elsewhere, #addon.other :is(.need, .download, ol, .then) { display: none; } /* not a chromium browser: the add-on can't be added here */
+#addon.other .elsewhere { display: block; }
 #addon .download { display: inline-block; margin: 6px 0 4px; padding: 8px 16px; background: var(--text); color: var(--card); font-weight: 500; text-decoration: none; } /* in ink, as the rest of the table */
 #addon .download:hover { background: #000; }
 #addon ol { margin: 14px 0 12px; padding-left: 22px; }
@@ -436,3 +461,25 @@ body.addon #world, body.addon #hud, body.addon #bar { display: none; } /* the ma
 #keys[hidden] { display: none; }
 #keys dt { font-weight: 600; white-space: pre; text-align: right; }
 #keys dd { margin: 0; color: var(--muted); }
+
+
+/* a ghost: a page pulled off its pin from the middle of a trail; the pin stays, and a scrap of its margin, its address printed on it (app.js ghosts) */
+.node.ghost { background: none; box-shadow: none; cursor: pointer; display: flex; align-items: center; }
+.ghost .pin { position: absolute; left: calc(var(--sq) * 0.4 - 8.5px); top: 50%; margin-top: -8.5px; z-index: 1; }
+.ghost .scrap {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 calc(var(--sq) * 0.4 + 14px);
+  background: var(--print);
+  color: rgba(var(--warm), 0.8);
+  font: 10.5px var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  rotate: var(--tear, 0deg);
+  transform-origin: calc(var(--sq) * 0.4) 50%;
+  clip-path: polygon(0 10%, 9% 0, 18% 14%, 29% 3%, 41% 12%, 54% 0, 66% 13%, 78% 2%, 90% 11%, 100% 4%, 97% 34%, 100% 62%, 96% 100%, 84% 88%, 71% 100%, 59% 89%, 46% 99%, 33% 88%, 20% 98%, 8% 90%, 0 96%, 3% 52%);
+  filter: drop-shadow(0 0.5px 0.5px rgba(var(--warm), 0.3));
+}
+.ghost:hover .scrap { filter: drop-shadow(0 0.5px 0.5px rgba(var(--warm), 0.3)) brightness(1.03); }
