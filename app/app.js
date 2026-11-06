@@ -1085,54 +1085,147 @@ function spotAround(from, size, towardY, { gap, room }) {
   }
   return spotFrom(from, size, towardY, { gap, room })
 }
+// Pieces of a walk (clips, notes, players) lying where a page of it is to go
+// are nudged out of its way: the shortest way that lands clear of the walk's
+// pages, with what is stuck on them. A piece with no such way stays.
+function nudgePieces(space, walk, sheets) {
+  const moved = new Map()
+  const stay = [...sheets, space]
+  for (const id of walk) {
+    const n = state.nodes[id]
+    if (n.type === 'page' || n.type === 'ghost' || n.on || !overlap(space, n, ROOM)) continue
+    const ways = [
+      { dx: space.x + space.w + ROOM - n.x, dy: 0 },
+      { dx: space.x - ROOM - (n.x + n.w), dy: 0 },
+      { dx: 0, dy: space.y + space.h + ROOM - n.y },
+      { dx: 0, dy: space.y - NAME - ROOM - (n.y + n.h) },
+    ].filter(d => !stay.some(o => overlap({ ...n, x: n.x + d.dx, y: n.y + d.dy }, o, ROOM)))
+    if (!ways.length) continue
+    const way = ways.reduce((a, b) => (Math.hypot(b.dx, b.dy) < Math.hypot(a.dx, a.dy) ? b : a))
+    for (const o of [n, ...notesOn(n.id)]) moved.set(o.id, way)
+  }
+  slide(moved, 1)
+}
+// Making a space in a walk for a page opened from `from`, as sheets are pushed
+// aside on a desk: whatever of the walk is in the space moves up or down out
+// of it (whichever is shorter), a desk's gap clear, and what came from it goes
+// with it (the pages it led on to, pieces cut from them, notes stuck on them).
+// Whatever that then runs into moves on the same way, and so on. Nothing else
+// of the walk moves. Returns how far each thing moves, or null if the way back
+// (the pages `from` came from, or a note on them) is in the space.
+function pushAside(space, from, walk) {
+  const { fixed } = rows(from)
+  const moved = new Map() // id -> { dx, dy }
+  const shown = n => (m => (m ? { ...n, x: n.x + m.dx, y: n.y + m.dy } : n))(moved.get(n.id))
+  const withIt = id => {
+    const group = new Set([id, ...onward(id, from.id)])
+    for (const o of group) for (const note of notesOn(o)) group.add(note.id)
+    return [...group].filter(o => !fixed(state.nodes[o]))
+  }
+  // each push: a box, the group it belongs to (which doesn't push itself), and
+  // the way it went (what it pushes goes on the same way: 1 down, -1 up; 0 for
+  // the space itself, which pushes each thing the shorter way out)
+  const pushes = [{ box: space, group: new Set(), way: 0 }]
+  let budget = 8 * walk.size // each thing pushed a few times at most; never forever
+  while (pushes.length && budget-- > 0) {
+    const { box, group, way } = pushes.shift()
+    for (const id of walk) {
+      const n = state.nodes[id]
+      if (id === from.id || group.has(id) || (n.on && !fixed(n))) continue // (a stuck note goes with what it is on)
+      const at = shown(n)
+      if (!overlap(box, at, roomBetween(box, at, DESK.gap / 2))) continue
+      if (fixed(n)) return null
+      const gap = roomBetween(box, at, DESK.gap)
+      const down = way ? way > 0 : at.y + at.h / 2 >= box.y + box.h / 2
+      const dy = down ? box.y + box.h + gap + NAME - at.y : box.y - NAME - gap - (at.y + at.h)
+      const going = new Set(withIt(id))
+      for (const g of going) {
+        const m = moved.get(g) || { dx: 0, dy: 0 }
+        moved.set(g, { dx: m.dx, dy: m.dy + dy })
+      }
+      for (const g of going) pushes.push({ box: shown(state.nodes[g]), group: going, way: down ? 1 : -1 })
+    }
+  }
+  return moved
+}
 // A page opened from another is set down right beside it, as a hand puts a
-// sheet down by the one being read: a desk's gap from it, in the first of the
-// eight spaces around it that is free (nothing of this walk there; anything
-// else there moves out of the way): the one nearest the link (`at`, where
-// the hand is), or now and then the next nearest, so a walk turns and
-// spreads over the table instead of running off in a line. Beside it, its
-// top is a name's height above the line you were reading (`linkY`, where the
-// link was in view), so that the line from the link runs straight across
-// into it, beside its first lines: at most half a page lower, so that at
-// least half of the page you came from stays beside the one you read. When
-// all eight are taken, it goes on the side the walk is heading anyway:
-// the pages opened from that page before, and the rest of the walk below
-// them, move down just enough to make the space, as a row opens in an
-// outline, so the newest is always the nearest and the walk keeps its shape.
-// (When what is beside is the page's own, a piece cut from it, or where it
-// came from, it goes into the nearest open space further round.)
+// sheet down by the one being read: a desk's gap from it, in one of the eight
+// spaces round it. Its top is a name's height above the line you were reading
+// (`linkY`, where the link was in view), so that the line from the link runs
+// straight across into it, but at most half a page lower, so that at least
+// half of the page you came from stays beside the one you read.
+// Which space: one right beside it (left, right, above, below) while one of
+// those has no page of the walk in it; a corner only when none has. Among
+// those, the walk keeps together, a cluster, not a line: each is weighed
+// (WEIGH) by how spread out the walk's pages near it would be with the new one
+// there, across and down, counted in pages (a walk that went down once and
+// would go down again turns instead); a little by how far the hand goes from
+// the link (`at`); more if it is behind the page, toward where that was come
+// from (a walk moves on, and the way back stays clear); and by a hand's
+// unsureness, so that no two walks turn alike. A piece of the walk in that
+// space is nudged out of it (nudgePieces); anything not of the walk moves
+// out of the way (makeRoom).
+// When every space has a page of the walk, it goes where it would fit best
+// all the same, and what is there is pushed aside (pushAside); if that is the
+// way back, into the nearest open space further round (spotAround).
+const WEIGH = {
+  near: 2.5, // the walk near a page: pages within two spaces of it (and a half, for the hand)
+  link: 0.5, // the hand's way from the link, a page's height of it, counts as half a page of spread
+  behind: 2, // a space behind counts as the walk one page longer: taken before anything is pushed, not while there is room ahead
+  unsure: 0.6, // a hand's unsureness: decides between spaces about as good, never against a page of spread
+}
 function spotBeside(from, size, at, linkY) {
   const walk = walkOf(from.id)
-  const side = outward(from).x < 0 ? -1 : 1
   const aimed = linkY == null ? from.y : from.y + clamp(Math.round(linkY - from.y - NAME), 0, Math.round(from.h / 2))
   const col = i => (i > 0 ? from.x + from.w + DESK.gap : i < 0 ? from.x - DESK.gap - size.w : from.x + Math.round((from.w - size.w) / 2))
   const row = j => (j > 0 ? from.y + from.h + DESK.gap + NAME : j < 0 ? from.y - DESK.gap - NAME - size.h : aimed)
+  const origin = state.nodes[state.edges.find(e => e.to === from.id && state.nodes[e.from])?.from]
+  const back = origin ? sideOf(origin, from) : { x: 0, y: 0 } // (a page that begins a walk has no behind)
   const spaces = []
-  for (const i of [-1, 0, 1]) for (const j of [-1, 0, 1]) if (i || j) spaces.push({ i, j, x: col(i), y: row(j) })
-  // how far the hand goes from the link to put it there (to its nearest edge)
-  const far = s => Math.hypot(Math.max(s.x - at.x, 0, at.x - s.x - size.w), Math.max(s.y - at.y, 0, at.y - s.y - size.h))
-  spaces.sort((a, b) => far(a) - far(b))
+  for (const i of [-1, 0, 1]) {
+    for (const j of [-1, 0, 1]) {
+      if (!i && !j) continue
+      spaces.push({ x: col(i), y: row(j), i, j, beside: !i || !j, behind: (back.x && i === -back.x) || (back.y && j === -back.y) })
+    }
+  }
   // set down by hand: a little along the page's edge (never so low beside it
   // that the line from the link misses it), a pixel or two nearer or further
   const laid = s => {
     const y = s.y + byHand(s.j ? NEAR : ALONG)
     return { type: 'page', x: s.x + byHand(s.i ? NEAR : ALONG), y: s.j || linkY == null ? y : Math.min(y, Math.round(at.y) - DESK.least), ...size }
   }
-  const taken = s => Object.values(state.nodes).some(n => walk.has(n.id) && overlap(s, n, DESK.gap / 2))
-  // the free ones, nearest first; a hand takes the nearest, or now and then
-  // (one time in three) the next nearest: the walk turns, as on a table
-  const free = spaces.map(s => [laid(s), { type: 'page', x: s.x, y: s.y, ...size }].find(p => !taken(p))).filter(Boolean)
+  const exact = s => ({ type: 'page', x: s.x, y: s.y, ...size })
+  // a space is taken by a page of the walk (or what is left of one)
+  const sheets = [...walk].map(id => state.nodes[id]).filter(n => n.type === 'page' || n.type === 'ghost')
+  const taken = box => sheets.some(n => overlap(box, n, DESK.gap / 2))
+  // how spread out the walk near the page would be with `box` in it, in pages
+  const pw = size.w + DESK.gap
+  const ph = size.h + DESK.gap + NAME
+  const c = centreOf(from)
+  const near = sheets.filter(n => n.type === 'page' && Math.abs(centreOf(n).x - c.x) <= WEIGH.near * pw && Math.abs(centreOf(n).y - c.y) <= WEIGH.near * ph)
+  const spread = box => {
+    const all = [...near, box]
+    const w = Math.max(...all.map(n => n.x + n.w)) - Math.min(...all.map(n => n.x))
+    const h = Math.max(...all.map(n => n.y + n.h)) - Math.min(...all.map(n => n.y - NAME))
+    return (w / pw) ** 2 + (h / ph) ** 2
+  }
+  // how far the hand goes from the link to put it there (to its nearest edge)
+  const far = box => Math.hypot(Math.max(box.x - at.x, 0, at.x - box.x - box.w), Math.max(box.y - at.y, 0, at.y - box.y - box.h))
+  const weight = (box, s) => spread(box) + (WEIGH.link * far(box)) / ph + (s.behind ? WEIGH.behind : 0) + Math.random() * WEIGH.unsure
+  const lightest = options => options.map(o => ({ ...o, w: weight(o.box, o.s) })).reduce((a, b) => (b.w < a.w ? b : a)).box
+  const besideFirst = options => (options.some(o => o.s.beside) ? options.filter(o => o.s.beside) : options)
+  const free = spaces.map(s => ({ s, box: [laid(s), exact(s)].find(box => !taken(box)) })).filter(o => o.box)
   if (free.length) {
-    const space = free[free.length > 1 && Math.random() < 1 / 3 ? 1 : 0]
+    const space = lightest(besideFirst(free))
+    nudgePieces(space, walk, sheets)
     slide(makeRoom(space, walk, PLACE.room), 1)
     return { x: space.x, y: space.y, ...size }
   }
-  const space = laid(spaces.find(s => s.i === side && !s.j))
-  const { nodes, owner, fixed } = rows(from)
-  // in the way: a page within half a desk's gap of the space (as when free); a piece within its room
-  const near = n => n.id !== from.id && overlap(space, n, n.type === 'page' ? DESK.gap / 2 : ROOM)
-  const inWay = nodes.filter(n => walk.has(n.id) && near(n))
-  if (inWay.some(fixed)) return spotAround(from, size, at.y, { gap: DESK.gap, room: DESK.gap / 2 })
+  const space = lightest(besideFirst(spaces.map(s => ({ s, box: laid(s) }))))
+  const pushed = pushAside(space, from, walk)
+  if (!pushed) return spotAround(from, size, at.y, { gap: DESK.gap, room: DESK.gap / 2 })
+  // each is moved there first, so that what else must make way sees where it
+  // went; then all are put back and slide there together
   const all = new Map() // id -> how far it moves
   const move = moved => {
     for (const [id, { dx, dy }] of moved) {
@@ -1143,17 +1236,8 @@ function spotBeside(from, size, at, linkY) {
       all.set(id, { dx: m.dx + dx, dy: m.dy + dy })
     }
   }
-  if (inWay.length) {
-    // the row opens at the top of what is in the space: all of the walk from
-    // there down goes down together, just far enough to clear it by a desk's
-    // gap (as sheets pushed aside on a desk)
-    const line = Math.min(...inWay.map(n => owner(n).y))
-    const going = nodes.filter(n => !fixed(n) && owner(n).y >= line)
-    const across = n => n.x < space.x + space.w + DESK.gap && n.x + n.w + DESK.gap > space.x
-    const dy = Math.max(0, ...going.filter(across).map(n => space.y + space.h + DESK.gap + NAME - n.y))
-    move(new Map(going.map(n => [n.id, { dx: 0, dy }])))
-  }
-  // what else is in the space, or where the walk went, moves out of the way
+  move(pushed)
+  // anything else where they went (not of this walk) moves out of the way
   move(makeRoom(space, walk, PLACE.room))
   for (const id of [...all.keys()]) if (walk.has(id) && state.nodes[id].type === 'page') move(makeRoom(state.nodes[id], walk, PLACE.room))
   for (const [id, { dx, dy }] of all) Object.assign(state.nodes[id], { x: state.nodes[id].x - dx, y: state.nodes[id].y - dy })
@@ -1177,7 +1261,12 @@ function rows(from, skip) {
   }
   const stays = new Set([from.id])
   for (let at = from.id, e; (e = state.edges.find(e => e.to === at && state.nodes[e.from])) && !stays.has(e.from); at = e.from) stays.add(e.from)
-  return { walk, nodes, owner, fixed: n => !walk.has(n.id) || stays.has(owner(n).id) }
+  // what doesn't move: what isn't of the walk, the way back (the pages this
+  // came from), and notes stuck on those. A piece cut from one of them lies
+  // beside it, among the pages opened from it, and moves as they do.
+  const stuckOn = n => (n.on && state.nodes[n.on] ? [state.nodes[n.on], ...stuckOn(state.nodes[n.on])] : [])
+  const fixed = n => !walk.has(n.id) || [n, ...stuckOn(n)].some(m => stays.has(m.id))
+  return { walk, nodes, owner, fixed }
 }
 // Closing a page laid beside the page it came from closes its row, as
 // opening it opened one: the walk below moves back up into its place,
