@@ -2756,6 +2756,7 @@ const COMMANDS = {
   f: { run: from => { const id = pageNear(from); if (id) focusNode(id) } }, // read it (F again: back)
   r: { run: from => { const id = pageNear(from); if (id) reload(id) } }, // load it again
   x: { run: from => { const id = (state.nodes[hovered] && hovered) || from || selected || pageNear(); if (id) close(id) } }, // put away what is under the pointer (Z brings it back)
+  l: { run: from => { const id = pageNear(from); if (id) chooseAddress(id) } }, // its link, copied
   // ⌘+ ⌘− ⌘0 are the browser's zoom: here they zoom the canvas (else the
   // browser would scale the whole app, tools and all). Not on the keys sheet:
   // zooming is the trackpad's.
@@ -2776,6 +2777,45 @@ const COMMANDS = {
   'shift+z': { run: () => redo() },
   '?': { run: () => showKeys(document.querySelector('#keys').hidden) },
 }
+// L copies a page's link: its whole address, printed in its head and
+// selected, as text is, shows what was copied. It can't be edited: a page's address is
+// where it is (/ goes somewhere else). Choosing anything else, a click, or Esc
+// lets it go.
+let linked = null
+function chooseAddress(id) {
+  const n = state.nodes[id]
+  const v = views.get(id)
+  if (!v?.address) return
+  letGoAddress()
+  linked = id
+  keysToCanvas() // (so it is copied here, and ⌘C copies it again, not something in the page)
+  v.address.classList.add('chosen')
+  v.address.textContent = (() => { try { return decodeURI(n.url) } catch { return n.url } })()
+  const range = document.createRange()
+  range.selectNodeContents(v.address)
+  getSelection().removeAllRanges()
+  getSelection().addRange(range)
+  navigator.clipboard.writeText(n.url).then(() => toast('link copied'), () => document.execCommand('copy')) // (else as ⌘C would, below)
+}
+function letGoAddress() {
+  const v = views.get(linked)
+  const n = state.nodes[linked]
+  linked = null
+  if (!v?.address) return
+  v.address.classList.remove('chosen')
+  if (n) v.address.replaceChildren(...addressParts(n.url))
+}
+document.addEventListener('selectionchange', () => {
+  if (linked && !views.get(linked)?.address.contains(getSelection().anchorNode)) letGoAddress()
+})
+// copied, it is the address itself (not as it reads, decoded)
+addEventListener('copy', e => {
+  const n = state.nodes[linked]
+  if (!n || !e.clipboardData) return
+  e.preventDefault()
+  e.clipboardData.setData('text/plain', n.url)
+  toast('link copied')
+})
 // The keys, on a sheet: ? shows it, ? again, Esc or a click anywhere puts it away.
 function showKeys(on) {
   document.querySelector('#keys').hidden = !on
@@ -2809,6 +2849,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.querySelector('#keys').hidden) return showKeys(false)
   if (e.key === 'Escape' && (cutting || placingNote)) return cutWith(false), placeNote(false) // a tool put down
   if (e.key === 'Escape' && !unfocus()) select(null)
+  if (e.key === 'Escape' && linked) return getSelection().removeAllRanges()
 })
 
 // ------------------------------------------------------- messages from frames

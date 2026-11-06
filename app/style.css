@@ -230,6 +230,8 @@ body.focusing .node.beside iframe { pointer-events: none; }
 /* the title takes what room there is; the address, at the right, up to half: each ends in … if it can't fit (the whole address on hover) */
 .bar .title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar .address { flex: 0 1 auto; max-width: 50%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(var(--warm), 0.62); }
+.bar .address.chosen { color: #2b241c; -webkit-user-select: text; user-select: text; cursor: text; }
+.bar .address.chosen::selection { background: rgba(var(--warm), 0.22); }
 /* each level above the page being read is a place (the site, a folder): pointing at one lights it, as a path bar does; a click goes up to it */
 body:not(.overview) .bar .address .up { cursor: pointer; transition: background-color 0.12s; }
 body:not(.overview) .bar .address .up:hover { background: rgba(var(--warm), 0.12); }
