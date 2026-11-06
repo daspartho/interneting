@@ -765,8 +765,8 @@ function fitAll() {
 // the screen at a size for reading, with a margin of canvas around it: on
 // one side the band where the page you came from lies, in the corner of
 // your eye, the line from it running across; the rest fades back. Moving the
-// canvas yourself, clicking elsewhere, or esc ends it (esc also goes back to
-// where you were).
+// canvas yourself or clicking elsewhere ends it; F again also goes back to
+// where you were.
 let focusReturn = null
 let focused = null
 let beside = null // { id, edge }: the page kept in view beside the one read (if one can be), and the line between them
@@ -901,6 +901,22 @@ function hover(id) {
   hovered = id
   if (id) views.get(id)?.el.classList.add('under')
   if (id) hot(id, true)
+  followKeys()
+}
+// The keys follow the pointer: on a page, it has them, so space and the
+// arrows scroll it and what you type goes there, with nothing to click; on
+// the bare canvas, the canvas has them. Except while you are typing in a
+// page (or a note, or /): they stay there till you click elsewhere. (At
+// once: the canvas can't see the pointer move inside a page, so no wait
+// could tell a pointer passing over one from one resting on it.)
+let typingIn = null
+function followKeys() {
+  const id = hovered
+  if ((typingIn && state.nodes[typingIn]) || gesture || !bar.hidden || isEditing(document.activeElement) || document.body.classList.contains('scrolling')) return
+  if (state.nodes[id]?.type === 'page') {
+    if (selected !== id) select(id)
+    keysTo(id)
+  } else if (!id && state.nodes[selected]?.type === 'page') select(null)
 }
 // what is under the pointer once things have moved under it (the browser
 // tells the canvas only when the pointer moves)
@@ -2752,13 +2768,15 @@ addEventListener('scroll', () => {
 // fingers' and the glide after) to what it began on, the canvas or one page's
 // frame, and a page only while the pointer is over it.
 // So a scroll goes to what it begins over, as a Mac's scroll goes to the
-// window under the pointer, and is that's until it is over:
+// window under the pointer, and is that's until it is over (the browser
+// keeps a scroll, glide and all, with what it began on):
 //   over a page: it scrolls the page (the page under the pointer takes it;
 //     style.css).
-//   anywhere else: it pans the mat. No page takes the pointer meanwhile, so
-//     none catches the scroll moving under the fingers, nor one begun while
-//     the mat still glides, until the hand moves the pointer (aiming at
-//     something new).
+//   anywhere else: it pans the mat. While the mat rolls, no page takes the
+//     pointer (nor the keys), so scrolls one after another keep rolling it
+//     over pages; once it has stopped (the glide's last pixel-or-two steps
+//     are stopped: a still board to the eye), or the hand moves the pointer,
+//     the page under the pointer takes the next.
 //   zoomed far out (overview), where pages are pictures: it pans the mat.
 // A pinch anywhere zooms the mat, about the pointer (so what it began on stays
 // under it), and past a zoom limit springs back when it is over.
@@ -2766,11 +2784,14 @@ canvas.addEventListener('wheel', e => {
   e.preventDefault()
   if (e.ctrlKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01), true)
   else panBy(e.deltaX, e.deltaY)
-  scrolled(true)
+  scrolled(Math.hypot(e.deltaX, e.deltaY) > STOPPED || e.ctrlKey)
 }, { passive: false })
+const STOPPED = 2 // px a step: a glide this slow reads as a board come to rest
 let scrollEnd = 0
-function scrolled(onMat) {
-  if (onMat) document.body.classList.add('scrolling')
+function scrolled(moving) {
+  if (!moving && !document.body.classList.contains('scrolling')) return
+  document.body.classList.add('scrolling')
+  if (!moving) return
   clearTimeout(scrollEnd)
   scrollEnd = setTimeout(scrollOver, STILL)
 }
@@ -2778,6 +2799,7 @@ function scrollOver() {
   clearTimeout(scrollEnd)
   document.body.classList.remove('scrolling')
   hoverAtPointer()
+  followKeys() // (the page now under the pointer has them)
   springBack()
 }
 // the hand moving the pointer (not the browser saying where it is now that
@@ -2923,7 +2945,6 @@ addEventListener('keydown', e => {
   }
   if (e.key === 'Escape' && !document.querySelector('#keys').hidden) return showKeys(false)
   if (e.key === 'Escape' && (cutting || placingNote)) return cutWith(false), placeNote(false) // a tool put down
-  if (e.key === 'Escape' && !unfocus()) select(null)
   if (e.key === 'Escape' && linked) return getSelection().removeAllRanges()
 })
 
@@ -3027,6 +3048,9 @@ addEventListener('message', e => {
       break
     case 'copied':
       collect(id, d.text)
+      break
+    case 'typing':
+      typingIn = d.on ? id : typingIn === id ? null : typingIn
       break
     case 'holding':
       holdingIn = id

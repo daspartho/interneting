@@ -499,6 +499,12 @@
   addEventListener('focus', () => {
     if (Date.now() - pressed > 1000) send('took-focus')
   })
+  // Typing in a field here keeps the keys here while you look elsewhere on the
+  // canvas (they follow the pointer otherwise), till the field is left: a
+  // click somewhere else. Only typing does: a field a page puts the caret in
+  // by itself doesn't hold them.
+  let writing = false
+  addEventListener('focusout', () => writing && send('typing', { on: (writing = false) }), true)
 
   // The canvas's commands (C, N, F, /, [, Z …) work from inside the page too:
   // the page hands them over. Which they are is the canvas's to say: a page
@@ -528,6 +534,7 @@
     const typing = at.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName)
     if (clipping || held || drawing || !Object.hasOwn(commands, name) || (typing && !commands[name])) {
       if (!/^(Alt|Control|Meta|Shift)$/.test(event.key)) pressed = Date.now() // a key it keeps is a press in it (⌘ alone isn't)
+      if (typing && !writing && !/^(Alt|Control|Meta|Shift|Escape|Tab)$/.test(event.key)) send('typing', { on: (writing = true) })
       return
     }
     // ours alone: the page's own listeners never hear it (its F, its /),
@@ -1974,7 +1981,7 @@
   // loading are its own, not the page's, so they stay. The canvas asks back
   // about links and pieces by numbers (req) and selectors that mean
   // something only in the frame they came from, so those are left out.
-  const FROM_FRAMES = new Set(['hello', 'touch', 'took-focus', 'open', 'zoom', 'key', 'clip', 'holding', 'copied', 'drag', 'dragend', 'media', 'show', 'cutting'])
+  const FROM_FRAMES = new Set(['hello', 'touch', 'took-focus', 'open', 'zoom', 'key', 'clip', 'holding', 'copied', 'drag', 'dragend', 'media', 'show', 'cutting', 'typing'])
   function fromFrame(v, dx, dy) {
     if (Array.isArray(v)) return v.map(x => fromFrame(x, dx, dy))
     if (!v || typeof v !== 'object') return v

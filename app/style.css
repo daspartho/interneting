@@ -118,7 +118,7 @@ body.focusing #edges g:not(.beside) { opacity: 0.35; } /* (all but the line from
 /* a press on the page beside the one read goes back to it, never into it */
 body.focusing .node.beside .body { cursor: pointer; }
 body.focusing .node.beside iframe { pointer-events: none; }
-.node.selected { box-shadow: var(--paper-held); }
+.node.selected:not(.page) { box-shadow: var(--paper-held); }
 
 
 
@@ -131,7 +131,6 @@ body.focusing .node.beside iframe { pointer-events: none; }
    between them. */
 .page { box-shadow: none; background: var(--print); }
 .page::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; box-shadow: var(--paper); clip-path: inset(0 -200px -200px -200px); transition: box-shadow 0.2s; }
-.page.selected::before { box-shadow: var(--paper-held); transition: box-shadow 0.4s cubic-bezier(0.3, 1.45, 0.5, 1); }
 .page.lifted::before { box-shadow: var(--carried); transition: box-shadow 0.12s; }
 .page .body { position: absolute; inset: 0 var(--side) var(--side); overflow: hidden; background: #fff; box-shadow: 0 0 0 0.5px rgba(var(--warm), 0.12); } /* the site, printed within the paper */
 .page .body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; color-scheme: normal; }
@@ -185,7 +184,6 @@ body.focusing .node.beside iframe { pointer-events: none; }
   -webkit-user-select: none; user-select: none;
   cursor: grab;
 }
-.selected > .bar { box-shadow: var(--paper-held); }
 .lifted > .bar { box-shadow: var(--carried); }
 /* the pin: the site's icon on a domed head in the page's colour, pushed into the board */
 .pin {
@@ -203,9 +201,6 @@ body.focusing .node.beside iframe { pointer-events: none; }
   transition: transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
 }
 .pin .fav { width: 11px; height: 11px; border-radius: 2px; }
-/* picked up: the page is off its pin, which stays in the board under it; the margin shows the hole, the pin's head seen through it */
-.selected > .bar .pin { transform: scale(0.34); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
-.selected > .bar .pin .fav { opacity: 0; }
 /* carried: the pin is out, in your fingers, with the page; set down, it's pushed back in */
 .lifted > .bar .pin { transform: translate(-3px, -12px); box-shadow: inset 0 -1.5px 2.5px rgba(0, 0, 0, 0.26), 0 0 0 0.5px rgba(0, 0, 0, 0.28), 6px 13px 7px rgba(var(--warm), 0.3); transition: transform 0.12s var(--ease), box-shadow 0.12s; }
 /* the address is the page's name */
