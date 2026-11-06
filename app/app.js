@@ -2196,6 +2196,7 @@ const drawn = new Map() // edge id -> { group, cls, line, head }
 function renderEdges() {
   edgeFrame = 0
   const seen = new Set()
+  const lineOf = lines()
   for (const edge of state.edges) {
     const g = geometry(edge)
     if (!g) continue
@@ -2210,6 +2211,8 @@ function renderEdges() {
       d = { group }
       drawn.set(edge.id, d)
     }
+    const colour = edge.kind === 'clip' ? '' : lineOf(edge.from)
+    if (d.colour !== colour) d.group.style.setProperty('--thread', (d.colour = colour))
     const cls = `${edge.kind}${hotNodes.has(edge.from) || hotNodes.has(edge.to) ? ' hot' : ''}${beside?.edge === edge.id ? ' beside' : ''}`
     if (d.cls !== cls) d.group.setAttribute('class', (d.cls = cls))
     const line = `M${g.x1},${g.y1} Q${g.mx},${g.my} ${g.x2},${g.y2}`
@@ -2219,6 +2222,33 @@ function renderEdges() {
     if (seen.has(id)) continue
     d.group.remove()
     drawn.delete(id)
+  }
+}
+// Each walk is a line of its own colour, as a city's train lines are: a page
+// you started from (one nothing led to: an address typed, a search) takes
+// the colour least in use, and everything followed from it keeps it, branches
+// and all. Its threads are in it, so you can tell one walk from another
+// across the board. (Pieces keep their linen thread: cut, not followed.)
+const LINES = ['#93352b', '#2f4f86', '#4d6b2a', '#a8741a', '#6d3b6e', '#21706b', '#b4532a']
+function lines() {
+  const root = new Map()
+  const startOf = id => {
+    if (root.has(id)) return root.get(id)
+    const seen = new Set()
+    let at = id
+    for (let e; !seen.has(at) && (e = state.edges.find(e => e.to === at && e.kind !== 'clip' && state.nodes[e.from])); at = e.from) seen.add(at)
+    root.set(id, at)
+    return at
+  }
+  return id => {
+    const r = state.nodes[startOf(id)]
+    if (!r) return LINES[0]
+    if (r.line == null) {
+      const used = LINES.map(() => 0)
+      for (const n of Object.values(state.nodes)) if (n.line != null) used[n.line % LINES.length]++
+      r.line = used.indexOf(Math.min(...used))
+    }
+    return LINES[r.line % LINES.length]
   }
 }
 // A thread is wound round pins: from the pin of the page a link was followed

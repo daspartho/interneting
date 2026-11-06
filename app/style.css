@@ -10,7 +10,7 @@
   --bg: #f4f0e8;
   --warm: 90, 78, 65; /* shadows, edges, threads' shade: warm grey-brown, never black */
   --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace; /* what is printed: addresses, sources */
-  --thread: #93352b; /* a link followed: a madder-red thread, pin to pin */
+  --thread: #93352b; /* a link followed: a thread pin to pin, in its walk's colour (app.js LINES; this, the first) */
   --cotton: #a39276; /* a piece cut from a page: a linen thread back to it, lighter than the red */
   --card: #ffffff;
   --text: #1d1d1f;
