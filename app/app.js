@@ -91,12 +91,15 @@ const addonReady = (async () => {
   bridged = true
 })()
 
-// A new page is as big as a tab would be on this screen, less a margin that
-// keeps the canvas in view around it; reading it shows it at exactly 100%.
-const FRAME = { side: 56, top: 64, bottom: 56 }
-// a page is read at 100%, as large as the window less its margins: on one
-// side the band where the page you came from lies (BAND, see DESK)
-const pageSize = () => ({ w: Math.max(600, innerWidth - FRAME.side - BAND), h: Math.max(400, innerHeight - FRAME.top - FRAME.bottom) })
+// A page is read at exactly 100%. It is as big as the window less a margin
+// all round (MARGIN), where the pages beside it show while it is read: its
+// shape is the window's less that, on any screen. Never narrower than 1024 px
+// (where most sites still lay themselves out as for a desktop: the margins
+// give way first) unless the window is.
+const pageSize = () => ({
+  w: Math.round(Math.max(Math.min(1024, innerWidth), innerWidth - 2 * MARGIN.side)),
+  h: Math.round(Math.max(400, innerHeight - MARGIN.top - MARGIN.bottom)),
+})
 const MIN_Z = 0.08 // a tab-size page is then about 100 px: a thumbnail (further out only to see everything)
 const MAX_Z = 2.5
 const OVERVIEW_Z = 0.25 // below this pages are too small to read: they become pictures you move
@@ -761,12 +764,11 @@ function fitAll() {
   if (all) animateCamera(cameraOn(all.box, Math.min(all.z, 1)))
 }
 
-// Reading focus. Opening a page (or double-clicking its name) brings it to
-// the screen at a size for reading, with a margin of canvas around it: on
-// one side the band where the page you came from lies, in the corner of
-// your eye, the line from it running across; the rest fades back. Moving the
-// canvas yourself or clicking elsewhere ends it; F again also goes back to
-// where you were.
+// Reading focus. Opening a page (or F, or double-clicking its name) brings it
+// in front of you at 100%, with the pages joined to it (the one you came
+// from, the ones opened from it) in the margin round it, in the corner of
+// your eye, the lines to them running across. Moving the canvas yourself or
+// clicking elsewhere ends it; F again also goes back to where you were.
 let focusReturn = null
 let focused = null
 let beside = null // { id, edge }: the page kept in view beside the one read (if one can be), and the line between them
@@ -779,38 +781,58 @@ function focusNode(id, { toggle = true, from = focused } = {}) {
   touch(id)
   wake(id)
   if (!focused) focusReturn = { cam: { ...cam }, id } // the view you were in, and the page you began reading from it
+  fitPage(n)
   keepBeside(id, from)
   setFocused(id)
   keysTo(id)
-  animateCamera(framing(n, state.nodes[beside?.id]))
+  animateCamera(framing(n))
+}
+// A page bigger than a new page would be (laid on a larger screen, or before
+// pages left a margin round them) shrinks to that size about its middle when
+// you go to read it, as when the window changes size: read at 100%, with its
+// margin.
+function fitPage(n) {
+  if (n.type !== 'page') return
+  const size = pageSize()
+  if (n.w <= size.w && n.h <= size.h) return
+  const w = Math.min(n.w, size.w)
+  const h = Math.min(n.h, size.h)
+  Object.assign(n, { x: Math.round(n.x + (n.w - w) / 2), y: Math.round(n.y + (n.h - h) / 2), w, h })
+  place(n)
+  carry(n)
+  drawEdges()
 }
 // The view that frames a thing for reading: never past 100% (an enlarged
-// page has soft text), on whole pixels. At 100% it leaves the band on the
-// side of `o`, the page kept beside it; else it is centred.
-function framing(n, o) {
-  const room = { w: innerWidth - 2 * FRAME.side, h: innerHeight - FRAME.top - FRAME.bottom }
-  if (o && over(n, o)) {
-    // the page you came from above or below: the page read goes to the far
-    // side, a little smaller if it must, so that as much of that one as
-    // DESK shows stays in view across the gap (and its tab)
-    const gap = Math.max(n.y - (o.y + o.h), o.y - (n.y + n.h))
-    const z = clamp(Math.min(room.w / n.w, room.h / (n.h + gap + NAME + DESK.show), 1), MIN_Z, 1)
-    const top = o.y < n.y ? FRAME.top + room.h - n.h * z : FRAME.top
-    return { z, x: Math.round((innerWidth - n.w * z) / 2 - n.x * z), y: Math.round(top - n.y * z) }
+// page has soft text), on whole pixels. What decides where it sits in the
+// window: the things joined to it by a line that lie close by (within LAID,
+// as a page opened from it is laid). Across, and again down: if they are on
+// one side only, it goes over to the other side (EDGE from the window's
+// edge), so that the window's room goes to the side they are on; on both
+// sides, or neither, it sits in the middle. Worked out each time, from what
+// is joined to it now.
+function framing(n) {
+  const z = clamp(Math.min(innerWidth / n.w, (innerHeight - NAME) / n.h, 1), MIN_Z, 1)
+  const close = state.edges
+    .map(e => (e.from === n.id ? e.to : e.to === n.id ? e.from : null))
+    .map(id => id && state.nodes[id])
+    .filter(o => o && o.type !== 'ghost' && apart(n, o) <= LAID)
+  // where the page starts along one axis of the window, given the room left over
+  const offset = (before, after, room) => {
+    if (before === after || room < 2 * EDGE) return room / 2
+    return before ? room - EDGE : EDGE
   }
-  // the page you came from level with it: as above or below, across
-  const gap = o ? Math.max(n.x - (o.x + o.w), o.x - (n.x + n.w)) : 0
-  const z = clamp(Math.min(room.w / (n.w + (o ? gap + DESK.show : 0)), room.h / n.h, 1), MIN_Z, 1)
-  const left = !o ? (innerWidth - n.w * z) / 2 : o.x < n.x ? FRAME.side + room.w - n.w * z : FRAME.side
-  return { z, x: Math.round(left - n.x * z), y: Math.round(FRAME.top + (room.h - n.h * z) / 2 - n.y * z) }
+  const left = offset(close.some(o => o.x + o.w <= n.x), close.some(o => o.x >= n.x + n.w), innerWidth - n.w * z)
+  const top = offset(close.some(o => o.y + o.h <= n.y), close.some(o => o.y >= n.y + n.h), innerHeight - (n.h + NAME) * z) // (its name above it in view too)
+  return { z, x: Math.round(left - n.x * z), y: Math.round(top + NAME * z - n.y * z) }
 }
-// What is kept in view beside a page you go to: the page you come to it
-// from, if a line joins them (a link followed, or back along one), else the
-// one it was opened from, else the newest page opened from it (the walk goes
-// on there); only one that lies beside it, so in the band, and near: where a
-// page opened from it is laid (within LAID), not one moved far off. When none
-// can be, the line from where it came from is still kept, coming in from the
-// edge.
+// The way back from a page you go to: of the pages in its margin, the one a
+// press takes you to (the others are live where they are; F over one goes to
+// it). The page you come to it from, if a line joins them (a link followed,
+// or back along one), else the one it was opened from, else the newest page
+// opened from it (the walk goes on there); only one that lies beside it and
+// near, where a page opened from it is laid (within LAID), not one moved far
+// off. When none can be, the line from where it came from is still kept,
+// coming in from the edge.
 function keepBeside(id, from) {
   const n = state.nodes[id]
   const line = o => state.edges.find(e => (e.from === o && e.to === id) || (e.from === id && e.to === o))
@@ -857,7 +879,7 @@ addEventListener('resize', () => {
       save()
     }
     stopCamera()
-    Object.assign(cam, framing(n, state.nodes[beside?.id]))
+    Object.assign(cam, framing(n))
     applyCamera()
   })
 })
@@ -979,9 +1001,14 @@ const byHand = (most = HAND) => Math.round((Math.random() * 2 - 1) * most)
 // A page within four squares of the one it came from was laid beside it
 // (sheets laid before 3 Nov 2026 lie up to 128 px apart)
 const LAID = sq(4)
-const BAND = DESK.gap + DESK.show // the band of the window beside the page read, for the page you came from
-
 const NAME = sq(0.75) // the height of a page's tab above it (style.css: --tab-h)
+// The margin of the window round a page read, where the pages beside it show:
+// a desk's gap and as much of the page there as DESK shows. Above, the page's
+// own name comes first; below, the name of the page there (its title and
+// pin) is part of what shows.
+const MARGIN = { side: DESK.gap + DESK.show, top: NAME + DESK.gap + DESK.show, bottom: DESK.gap + NAME + DESK.show }
+const EDGE = sq(0.5) // the least window left past a page read, on the side with nothing joined to it
+
 function overlaps(r, room = ROOM) {
   for (const n of Object.values(state.nodes)) {
     if (r.x < n.x + n.w + room && r.x + r.w + room > n.x && r.y - NAME < n.y + n.h + room && r.y + r.h + room > n.y - NAME) return true

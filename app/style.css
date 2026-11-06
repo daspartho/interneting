@@ -106,15 +106,12 @@ body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
   background: var(--card);
   box-shadow: var(--paper);
 }
-/* reading focus: the page being read stands out; its neighbours fade back */
 .node, #edges g { transition: box-shadow 0.2s, opacity 0.35s var(--ease); }
-body.focusing .node:not(.focused, .on-focused, .beside) { opacity: 0.62; } /* (the page you came from stays as it is: the way back) */
 /* lifted while carried, settling back with a little give when put down;
    pages and clips only lift their shadow (scaling them would soften text) */
 .node.lifted { box-shadow: var(--carried); transition: box-shadow 0.12s; }
 .note, .image { transition: box-shadow 0.2s, opacity 0.35s var(--ease), transform 0.32s cubic-bezier(0.3, 1.45, 0.5, 1), rotate 0.32s cubic-bezier(0.3, 1.45, 0.5, 1); } /* (a note settles into its new turn) */
 .note.lifted, .image.lifted { transform: scale(1.03) rotate(-0.6deg); transition: box-shadow 0.12s, transform 0.14s var(--ease); }
-body.focusing #edges g:not(.beside) { opacity: 0.35; } /* (all but the line from the page you came from) */
 /* a press on the page beside the one read goes back to it, never into it */
 body.focusing .node.beside .body { cursor: pointer; }
 body.focusing .node.beside iframe { pointer-events: none; }
