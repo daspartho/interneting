@@ -1558,8 +1558,8 @@ const COLOUR = /^rgba?\([\d., ]+\)$/
 function paintTab(n, v) {
   v.el.style.setProperty('--tab', COLOUR.test(n.bg) ? n.bg : '')
 }
-// Where a page's pin goes in: in from its left corner by hand, half a square
-// give or take a quarter, the same for a page each time (from its id).
+// Where a page's pin goes in: at the middle of its head, by hand, a quarter
+// of a square either side at most, the same for a page each time (from its id).
 const tabAt = id => 0.25 + 0.5 * ([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000) / 1000
 function mountPage(node, view) {
   const name = el('div', 'bar')
@@ -2257,7 +2257,7 @@ function lines() {
 // back from there to its page's pin. Under its own weight a thread sags a
 // little, a fiftieth of its length at most a quarter square, each its own.
 function pinOf(n) {
-  if (n.type === 'page') return { x: n.x + SQ * tabAt(n.id), y: n.y - NAME / 2 }
+  if (n.type === 'page') return { x: n.x + n.w / 2 + SQ * (tabAt(n.id) - 0.5), y: n.y - NAME / 2 }
   if (n.type === 'ghost') return { x: n.x + GHOST.pin, y: n.y + n.h / 2 }
   return { x: n.x + n.w / 2, y: n.y } // (where its tape is)
 }
