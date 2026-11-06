@@ -602,14 +602,9 @@ function applyCamera() {
   // on whole device pixels, so a page at 100% is drawn sharp
   const px = v => Math.round(v * devicePixelRatio) / devicePixelRatio
   world.style.transform = `translate(${px(cam.x)}px, ${px(cam.y)}px) scale(${cam.z})`
-  // the mat under it all: its centimetre at this zoom; the centimetre lines
-  // fade out as they crowd (closer than a few pixels they are only grey)
-  const cm = MAT_CM * cam.z
-  canvas.style.setProperty('--minor', `${cm}px`)
-  canvas.style.setProperty('--major', `${cm * 5}px`)
+  // the paper's grain moves with it
   canvas.style.setProperty('--mx', `${px(cam.x)}px`)
   canvas.style.setProperty('--my', `${px(cam.y)}px`)
-  canvas.style.setProperty('--fine', clamp((cm - 4) / 8, 0, 1))
   document.body.classList.add('moving')
   clearTimeout(settleTimer)
   settleTimer = setTimeout(() => {
@@ -2627,25 +2622,15 @@ addEventListener('pointermove', e => {
     n.x = Math.round(gesture.x0 + dx / cam.z)
     n.y = Math.round(gesture.y0 + dy / cam.z)
   } else resize(n, gesture, dx / cam.z, dy / cam.z)
-  placing(n)
   place(n)
   carry(n)
   drawEdges()
 })
-// The squares things are placed by show round what you're placing, as far
-// as it reaches and a little more, while you place it (style.css #canvas).
-function placing(n) {
-  const c = toScreen(n.x + n.w / 2, n.y + n.h / 2)
-  canvas.style.setProperty('--gx', `${c.x}px`)
-  canvas.style.setProperty('--gy', `${c.y}px`)
-  canvas.style.setProperty('--gr', `${Math.max(n.w, n.h) * cam.z * 0.75 + SQ * 4 * cam.z}px`)
-  document.body.classList.add('placing')
-}
 addEventListener('pointerup', e => {
   if (!gesture || e.pointerId !== gesture.id) return
   const g = gesture
   gesture = null
-  document.body.classList.remove('busy', 'panning', 'placing')
+  document.body.classList.remove('busy', 'panning')
   if (g.kind === 'pan' && !g.moved) {
     select(null)
     endFocus()
@@ -3119,7 +3104,7 @@ function releaseHolds() {
   if (gesture) return
   space = false
   dragging = null
-  document.body.classList.remove('space', 'dragging', 'busy', 'panning', 'placing')
+  document.body.classList.remove('space', 'dragging', 'busy', 'panning')
 }
 addEventListener('blur', releaseHolds)
 // A press in a page (the canvas sees only its keys leave for the page's

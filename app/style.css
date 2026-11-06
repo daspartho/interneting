@@ -65,30 +65,11 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round
   inset: 0;
   overflow: hidden;
   touch-action: none;
-  /* paper (app.js applyCamera): a fine grain that moves with what lies on it.
-     The squares things are placed by show only while you place one, round it
-     (--gx, --gy: where it is on the screen), fading out as it lands. */
-  --line: 70, 60, 40;
-  --minor: var(--sq); --mx: 0px; --my: 0px; /* (till the view is first drawn: the first page lies on it) */
+  /* paper (app.js applyCamera): a fine grain that moves with what lies on it */
+  --mx: 0px; --my: 0px; /* (till the view is first drawn) */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .3 0 0 0 0 .25 0 0 0 .13 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
   background-position: var(--mx) var(--my);
 }
-#canvas::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.35s var(--ease);
-  background-image:
-    linear-gradient(to right, rgba(var(--line), calc(0.09 * var(--fine, 1))) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(var(--line), calc(0.09 * var(--fine, 1))) 1px, transparent 1px);
-  background-size: var(--minor) var(--minor);
-  background-position: var(--mx) var(--my);
-  -webkit-mask-image: radial-gradient(circle var(--gr, 320px) at var(--gx, 50%) var(--gy, 50%), #000 30%, transparent);
-  mask-image: radial-gradient(circle var(--gr, 320px) at var(--gx, 50%) var(--gy, 50%), #000 30%, transparent);
-}
-body.placing #canvas::before { opacity: 1; transition-duration: 0.12s; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 body.moving #world { will-change: transform; }
 body.panning #canvas, body.space #canvas { cursor: grabbing; }
