@@ -101,7 +101,7 @@ const MIN_Z = 0.08 // a tab-size page is then about 100 px: a thumbnail (further
 const MAX_Z = 2.5
 const OVERVIEW_Z = 0.25 // below this pages are too small to read: they become pictures you move
 const STORE = 'canvas-browser:walk'
-const SEARCH = q => `https://wiby.me/?q=${encodeURIComponent(q)}`
+const SEARCH = q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}` // (a whole-web search; its bangs are the ones the box knows: !g for Google)
 const TRAILHEADS = [
   'https://syllabusproject.org/syllabus-for-taking-an-internet-walk/',
   'https://liiibrary.space/',
