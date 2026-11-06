@@ -28,6 +28,14 @@
   const here = () => toReal(location.href)
   const noHash = u => u.split('#')[0]
   const siteOf = u => new URL(u).hostname
+  // The same page showing something else: only its ?query differs (sorted,
+  // filtered, a search refined), as a tab's page changes under its own address
+  const samePath = href => {
+    const u = URL.parse(href)
+    const h = URL.parse(here())
+    return !!u && !!h && u.origin === h.origin && u.pathname === h.pathname
+  }
+  let staying = null // a link followed in place (the next of a series), on its way
   const send = (type, data = {}) => parent.postMessage({ cb: 1, type, ...data }, inner ? ancestors?.[0] || '*' : APP)
   const rectOf = el => {
     const r = el.getClientRects()[0] || el.getBoundingClientRect()
@@ -142,7 +150,9 @@
     if (event.navigationType === 'traverse' || event.formData || event.downloadRequest !== null || !event.cancelable) return
     const u = new URL(event.destination.url)
     if (event.destination.sameDocument || !/^https?:$/.test(u.protocol) || noHash(toReal(u.href)) === noHash(here())) return
-    if ((event.userInitiated || navigator.userActivation?.isActive) && !(inner && siteOf(u.href) === siteOf(here()))) {
+    const stay = samePath(u.href) || (staying && noHash(toReal(u.href)) === noHash(staying))
+    staying = null
+    if (!stay && (event.userInitiated || navigator.userActivation?.isActive) && !(inner && siteOf(u.href) === siteOf(here()))) {
       event.preventDefault()
       return openBeside(null, toReal(u.href), false)
     }
@@ -267,6 +277,13 @@
       if (!quiet) location.assign(a.href)
       return
     }
+    // The same page showing something else, or the next of a series (a link
+    // marked next or previous: page 2 of the results, the next post): it goes
+    // on in place, as in a tab. ⌘ still opens it beside.
+    if (!quiet && there === window && (samePath(real) || /\b(next|prev|previous)\b/i.test(a.rel))) {
+      staying = real
+      return
+    }
     event.preventDefault()
     // within the page: the page's own scripts still see the click, as in a tab
     if (!quiet && there && (there === PAGE ? noHash(real) === noHash(pageAddress()) : siteOf(real) === siteOf(here()))) return show(there, real)
@@ -289,14 +306,14 @@
   }
 
   // Forms submit in place; a search you make opens beside, as a link you
-  // follow does.
+  // follow does (one made again on its own results page goes on in place).
   addEventListener('submit', event => {
     const form = event.target
     if (!(form instanceof HTMLFormElement)) return
     const [el, name] = event.submitter?.hasAttribute('formaction') ? [event.submitter, 'formaction'] : [form, 'action']
     const action = new URL(el.getAttribute(name) || location.href, document.baseURI)
     const method = (event.submitter?.getAttribute('formmethod') || form.method || 'get').toLowerCase()
-    if (method === 'get' && /^https?:$/.test(action.protocol) && navigator.userActivation?.isActive) {
+    if (method === 'get' && /^https?:$/.test(action.protocol) && navigator.userActivation?.isActive && !samePath(action.href)) {
       // a search: its results are a new place, beside this one
       event.preventDefault()
       action.search = new URLSearchParams(new FormData(form, event.submitter)).toString()
