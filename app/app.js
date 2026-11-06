@@ -1053,7 +1053,7 @@ function spotAround(from, size, towardY, { gap, room }) {
     spaces.sort((a, b) => turn(Math.atan2(a.y + a.h / 2 - cy, a.x + a.w / 2 - cx)) - turn(Math.atan2(b.y + b.h / 2 - cy, b.x + b.w / 2 - cx)))
     const space = spaces.find(sp => !taken(sp))
     if (!space) continue
-    slide(makeRoom(space, walk, room))
+    slide(makeRoom(space, walk, room), 1)
     return { x: space.x, y: space.y, ...size }
   }
   return spotFrom(from, size, towardY, { gap, room })
@@ -1097,7 +1097,7 @@ function spotBeside(from, size, at, linkY) {
   const free = spaces.map(s => [laid(s), { type: 'page', x: s.x, y: s.y, ...size }].find(p => !taken(p))).filter(Boolean)
   if (free.length) {
     const space = free[free.length > 1 && Math.random() < 1 / 3 ? 1 : 0]
-    slide(makeRoom(space, walk, PLACE.room))
+    slide(makeRoom(space, walk, PLACE.room), 1)
     return { x: space.x, y: space.y, ...size }
   }
   const space = laid(spaces.find(s => s.i === side && !s.j))
@@ -1130,7 +1130,7 @@ function spotBeside(from, size, at, linkY) {
   move(makeRoom(space, walk, PLACE.room))
   for (const id of [...all.keys()]) if (walk.has(id) && state.nodes[id].type === 'page') move(makeRoom(state.nodes[id], walk, PLACE.room))
   for (const [id, { dx, dy }] of all) Object.assign(state.nodes[id], { x: state.nodes[id].x - dx, y: state.nodes[id].y - dy })
-  slide(all) // (from where they are shown)
+  slide(all, 1) // (from where they are shown)
   return { x: space.x, y: space.y, ...size }
 }
 // The rows of a walk, seen from a page in it (as it will be without `skip`):
@@ -1168,7 +1168,7 @@ function closeRow(id) {
   const going = new Set(below.map(m => m.id))
   const there = below.map(m => ({ ...m, y: m.y + dy }))
   if (there.some(m => nodes.some(o => !going.has(o.id) && overlap(m, o, roomBetween(m, o, DESK.gap))))) return
-  slide(new Map(below.map(m => [m.id, { dx: 0, dy }])))
+  slide(new Map(below.map(m => [m.id, { dx: 0, dy }])), -1)
 }
 const roomBetween = (a, b, room) => (a.type === 'page' && b.type === 'page' ? room : ROOM) // places keep apart; pieces sit close
 const overlap = (a, b, r) => a.x < b.x + b.w + r && a.x + a.w + r > b.x && a.y - NAME < b.y + b.h + r && a.y + a.h + r > b.y - NAME
@@ -1240,10 +1240,35 @@ function makeRoom(box, keep, room) {
   }
   return moved
 }
+// How much further than it must (`hand` 1) or how much short (`hand` -1) a
+// hand pushes a thing that has to go `d`: up to a quarter square along the
+// way it goes (and never more than a quarter of the way), and up to three
+// pixels to one side.
+function give(d, hand) {
+  const len = Math.hypot(d.dx, d.dy)
+  if (!len) return { dx: 0, dy: 0 }
+  const along = hand * Math.random() * Math.min(HAND / 4, len / 4)
+  const across = byHand(3)
+  return { dx: (d.dx * along - d.dy * across) / len, dy: (d.dy * along + d.dx * across) / len }
+}
+// Each thing moved by hand its own way; a note stuck on something that moves
+// goes exactly as that does.
+function byHandAll(moved, hand) {
+  const gives = new Map([...moved].map(([id, d]) => [id, give(d, hand)]))
+  const carrier = id => (m => (m && moved.has(m) ? carrier(m) : id))(state.nodes[id].on)
+  return new Map([...moved].map(([id, d]) => {
+    const g = gives.get(carrier(id))
+    return [id, { dx: d.dx + g.dx, dy: d.dy + g.dy }]
+  }))
+}
 // Things slide to where they now are, in step with the newcomer's arrival;
-// their lines follow them.
+// their lines follow them. Moved by hand (`hand`: 1 pushed aside, -1 closing
+// back up), no two go exactly as far (see give): pushed aside, a little
+// further than they must; closing up, a little short. Never the other way, so
+// none goes into what it was making room for or closing up on.
 const sliding = new Map() // id -> where it is shown while it slides
-function slide(moved) {
+function slide(moved, hand = 0) {
+  if (hand) moved = byHandAll(moved, hand)
   for (const [id, { dx, dy }] of moved) {
     const n = state.nodes[id]
     n.x = Math.round(n.x + dx)
@@ -1344,7 +1369,7 @@ function removeNode(id) {
   const ghost = from ? addNode({ type: 'ghost', url: gone.url, title: gone.title, favicon: gone.favicon, bg: gone.bg, z: gone.z, ...at, ...GHOST, was: { w: gone.w, h: gone.h } }) : null
   drop(id, ghost?.id)
   if (ghost) appear(ghost.id)
-  if (closing?.size) slide(closing)
+  if (closing?.size) slide(closing, -1)
   for (let g; (g = Object.values(state.nodes).find(n => n.type === 'ghost' && !between(n.id))); ) drop(g.id) // (one left at an end goes)
   drawEdges()
   knowDoors()
@@ -1371,11 +1396,13 @@ function sideOf(from, n) {
   const dy = centreOf(n).y - centreOf(from).y
   return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) || 1 }
 }
+// (left by hand: a few pixels off either way, a scrap of its own each time
+// for a page, the same however often it is asked where)
 function ghostAt(n, side) {
   const level = n.y - NAME / 2 - GHOST.h / 2 // (its pin where the page's was)
-  if (side.x > 0) return { x: n.x, y: Math.round(level) }
-  if (side.x < 0) return { x: n.x + n.w - GHOST.w, y: Math.round(level) }
-  return { x: Math.round(n.x + n.w / 2 - GHOST.w / 2), y: Math.round(side.y > 0 ? level : n.y + n.h - GHOST.h) }
+  const off = k => Math.round((tabAt(n.id + k) - 0.5) * HAND / 2) // up to an eighth of a square either way
+  const at = side.x > 0 ? { x: n.x, y: level } : side.x < 0 ? { x: n.x + n.w - GHOST.w, y: level } : { x: n.x + n.w / 2 - GHOST.w / 2, y: side.y > 0 ? level : n.y + n.h - GHOST.h }
+  return { x: Math.round(at.x + off('x')), y: Math.round(at.y + off('y')) }
 }
 // the room a page frees, shrunk to a ghost at `g`, on the side its walk goes on
 function freedBy(n, g, side) {
@@ -1438,10 +1465,13 @@ function reopen(id) {
   const box = { type: 'page', w, h, x: Math.round(side.x > 0 ? g.x : side.x < 0 ? g.x + g.w - w : g.x + g.w / 2 - w / 2), y: Math.round(side.y < 0 ? g.y + g.h - h : g.y + g.h / 2 + NAME / 2) }
   const freed = freedBy(box, g, side)
   const moved = from ? new Map(onward(id, from.id).map(o => [o, { dx: -freed.dx, dy: -freed.dy }])) : new Map()
+  // (opened out by hand: it lands a little off, away from where it came from, never back into it)
+  box.x += side.x ? Math.round(side.x * Math.random() * NEAR) : byHand(NEAR)
+  box.y += side.y ? Math.round(side.y * Math.random() * NEAR) : byHand(NEAR)
   const page = addNode({ type: 'page', url: g.url, title: g.title, favicon: g.favicon, bg: g.bg, x: box.x, y: box.y, w, h })
   drop(id, page.id)
-  slide(moved)
-  slide(makeRoom(page, walkOf(page.id), PLACE.room)) // (anything else there makes way)
+  slide(moved, 1)
+  slide(makeRoom(page, walkOf(page.id), PLACE.room), 1) // (anything else there makes way)
   drawEdges()
   appear(page.id)
   commit({ kind: 'open', node: page.id, url: page.url })
@@ -1605,6 +1635,8 @@ function place(node) {
   // undo) notes are measured together once all is in place: one layout of
   // the canvas, not one for each note
   if (auto && !restoring) node.h = v.el.offsetHeight || node.h
+  if (auto && node.tilt != null) v.el.style.setProperty('--tilt', `${node.tilt}deg`) // (as it was turned, after undo too)
+  if (node.type === 'page' && v.el.style.getPropertyValue('--tab-at') !== String(pinAt(node))) v.el.style.setProperty('--tab-at', pinAt(node))
 }
 function frame(sandbox, src) {
   const f = el('iframe')
@@ -1630,11 +1662,14 @@ function paintTab(n, v) {
   v.el.style.setProperty('--tab', COLOUR.test(n.bg) ? n.bg : '')
 }
 // Where a page's pin goes in: at the middle of its head, by hand, a quarter
-// of a square either side at most, the same for a page each time (from its id).
+// of a square either side at most: the same for a page each time (from its
+// id) until it is moved; set down again, it is pinned again, wherever the
+// hand pushes it in this time (pinAt).
 const tabAt = id => 0.25 + 0.5 * ([...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000) / 1000
+const pinAt = n => n.pin ?? tabAt(n.id)
 function mountPage(node, view) {
   const name = el('div', 'bar')
-  view.el.style.setProperty('--tab-at', tabAt(node.id))
+  view.el.style.setProperty('--tab-at', pinAt(node))
   const fav = el('img', 'fav')
   fav.style.visibility = 'hidden'
   fav.onload = () => ((fav.style.visibility = ''), views.get(node.id)?.el.classList.add('has-icon')) // (zoomed out, the icon stands for the site)
@@ -1928,7 +1963,7 @@ function mountEmbed(node, view) {
 }
 function mountNote(node, view) {
   if (node.url) view.el.classList.add('quote')
-  view.el.style.setProperty('--tilt', `${(tabAt(node.id) - 0.5) * 6}deg`) // (stuck down by hand: never quite straight)
+  view.el.style.setProperty('--tilt', `${node.tilt ?? (tabAt(node.id) - 0.5) * 6}deg`) // (stuck down by hand: never quite straight; see draggedTilt)
   const text = el('div', 'text', node.text || '')
   text.contentEditable = 'plaintext-only'
   text.spellcheck = false
@@ -2327,8 +2362,11 @@ function lines() {
 // ghost keeps its pin). A piece is taped at its top edge: its thread runs
 // back from there to its page's pin. Under its own weight a thread sags a
 // little, a fiftieth of its length at most a quarter square, each its own.
+// Wound round a pin by hand, each thread leaves it at its own spot on the
+// pin's rim, a few pixels to one side or the other of the next: where
+// several meet at one pin they fan out from it, not from one point.
 function pinOf(n) {
-  if (n.type === 'page') return { x: n.x + n.w / 2 + SQ * (tabAt(n.id) - 0.5), y: n.y - NAME / 2 }
+  if (n.type === 'page') return { x: n.x + n.w / 2 + SQ * (pinAt(n) - 0.5), y: n.y - NAME / 2 }
   if (n.type === 'ghost') return { x: n.x + GHOST.pin, y: n.y + n.h / 2 }
   return { x: n.x + n.w / 2, y: n.y } // (where its tape is)
 }
@@ -2336,10 +2374,18 @@ function geometry(edge) {
   const from = state.nodes[edge.from] && shownAt(state.nodes[edge.from])
   const to = state.nodes[edge.to] && shownAt(state.nodes[edge.to])
   if (!from || !to) return null
-  const a = pinOf(from)
-  const b = pinOf(to)
+  const [a, b] = wound(pinOf(from), pinOf(to), edge.id)
   const sag = Math.min(SQ / 4, Math.hypot(b.x - a.x, b.y - a.y) / 50) * (0.8 + 0.4 * tabAt(edge.id))
   return { x1: a.x, y1: a.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 + sag, x2: b.x, y2: b.y }
+}
+const RIM = 3 // px either side of a pin's middle: within its 17 px head
+function wound(a, b, id) {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  const nx = -(b.y - a.y) / len // across the thread
+  const ny = (b.x - a.x) / len
+  const off = k => Math.round((tabAt(id + k) - 0.5) * 4 * RIM * 10) / 10
+  const [s, t] = [off('a'), off('b')]
+  return [{ x: a.x + nx * s, y: a.y + ny * s }, { x: b.x + nx * t, y: b.y + ny * t }]
 }
 function exitPoint(n, from, to, gap) {
   const dx = to.x - from.x
@@ -2664,6 +2710,12 @@ addEventListener('pointerup', e => {
     placeCaret(t, e.clientX, e.clientY)
   }
   const moved = state.nodes[g.node]
+  if (g.moved && g.kind === 'move' && moved?.type === 'note') draggedTilt(moved, g, e)
+  if (g.moved && g.kind === 'move' && moved?.type === 'page') {
+    moved.pin = Math.round((0.25 + 0.5 * Math.random()) * 1000) / 1000 // pinned again, by hand
+    place(moved)
+    drawEdges()
+  }
   if (g.moved && g.kind === 'move' && moved?.type === 'note' && !moved.url) {
     const target = underNote(moved)
     if (target) {
@@ -2673,6 +2725,26 @@ addEventListener('pointerup', e => {
   }
   if (g.moved && g.kind !== 'pan') commit({ kind: g.kind, node: g.node })
 })
+// A note pushed across the table by a finger turns as it goes: held off its
+// middle, the part held leads and the rest trails behind (the turn is the
+// cross of where it was held, from its middle, and the way it went). It
+// settles at up to four degrees either way; a short nudge turns it only a
+// little from how it lay (the whole turn once moved three squares or more).
+function draggedTilt(n, g, e) {
+  const v = views.get(n.id)
+  const r = v.el.getBoundingClientRect()
+  const hx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2)
+  const hy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2)
+  const dx = e.clientX - g.sx
+  const dy = e.clientY - g.sy
+  const len = Math.hypot(dx, dy)
+  if (!len) return
+  const turn = clamp((hx * dy - hy * dx) / len, -1, 1) * 4
+  const was = n.tilt ?? (tabAt(n.id) - 0.5) * 6
+  const k = Math.min(1, len / (sq(3) * cam.z))
+  n.tilt = Math.round((was + (turn - was) * k) * 10) / 10
+  v.el.style.setProperty('--tilt', `${n.tilt}deg`)
+}
 function placeCaret(t, x, y) {
   const pos = document.caretPositionFromPoint?.(x, y)
   const range = document.createRange()
