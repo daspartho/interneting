@@ -112,9 +112,6 @@ body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
 .node.lifted { box-shadow: var(--carried); transition: box-shadow 0.12s; }
 .note, .image { transition: box-shadow 0.2s, opacity 0.35s var(--ease), transform 0.32s cubic-bezier(0.3, 1.45, 0.5, 1), rotate 0.32s cubic-bezier(0.3, 1.45, 0.5, 1); } /* (a note settles into its new turn) */
 .note.lifted, .image.lifted { transform: scale(1.03) rotate(-0.6deg); transition: box-shadow 0.12s, transform 0.14s var(--ease); }
-/* a press on the page beside the one read goes back to it, never into it */
-body.focusing .node.beside .body { cursor: pointer; }
-body.focusing .node.beside iframe { pointer-events: none; }
 .node.selected:not(.page) { box-shadow: var(--paper-held); }
 
 

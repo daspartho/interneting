@@ -771,9 +771,7 @@ function fitAll() {
 // clicking elsewhere ends it; F again also goes back to where you were.
 let focusReturn = null
 let focused = null
-let beside = null // { id, edge }: the page kept in view beside the one read (if one can be), and the line between them
-// (`from`: the page you are coming from, by default the one being read)
-function focusNode(id, { toggle = true, from = focused } = {}) {
+function focusNode(id, { toggle = true } = {}) {
   if (toggle && focused === id) return unfocus()
   const n = state.nodes[id]
   if (!n) return
@@ -782,7 +780,6 @@ function focusNode(id, { toggle = true, from = focused } = {}) {
   wake(id)
   if (!focused) focusReturn = { cam: { ...cam }, id } // the view you were in, and the page you began reading from it
   fitPage(n)
-  keepBeside(id, from)
   setFocused(id)
   keysTo(id)
   animateCamera(framing(n))
@@ -825,42 +822,8 @@ function framing(n) {
   const top = offset(close.some(o => o.y + o.h <= n.y), close.some(o => o.y >= n.y + n.h), innerHeight - (n.h + NAME) * z) // (its name above it in view too)
   return { z, x: Math.round(left - n.x * z), y: Math.round(top + NAME * z - n.y * z) }
 }
-// The way back from a page you go to: of the pages in its margin, the one a
-// press takes you to (the others are live where they are; F over one goes to
-// it). The page you come to it from, if a line joins them (a link followed,
-// or back along one), else the one it was opened from, else the newest page
-// opened from it (the walk goes on there); only one that lies beside it and
-// near, where a page opened from it is laid (within LAID), not one moved far
-// off. When none can be, the line from where it came from is still kept,
-// coming in from the edge.
-function keepBeside(id, from) {
-  const n = state.nodes[id]
-  const line = o => state.edges.find(e => (e.from === o && e.to === id) || (e.from === id && e.to === o))
-  const joined = o => o && o !== id && state.nodes[o] && !views.get(o)?.closing && line(o)
-  const origin = state.edges.find(e => e.to === id && state.nodes[e.from])?.from
-  const opened = state.edges.filter(e => e.from === id && state.nodes[e.to]?.type === 'page').map(e => state.nodes[e.to]).sort((a, b) => (b.created || 0) - (a.created || 0)).map(c => c.id)
-  const o = [from, origin, ...opened].find(o => joined(o) && inBand(n, state.nodes[o]) && apart(n, state.nodes[o]) <= LAID)
-  const thread = o || [from, origin].find(joined)
-  beside = thread ? { id: o || null, edge: line(thread).id } : null
-}
-// whether `o` lies beside `n` so that it can be in view while `n` is read:
-// level with it, or above or below it (see framing)
-function inBand(n, o) {
-  const gap = Math.max(n.x - (o.x + o.w), o.x - (n.x + n.w))
-  const level = Math.min(n.y + n.h, o.y + o.h) - Math.max(n.y, o.y)
-  return (gap >= 0 && level >= DESK.least) || over(n, o)
-}
 // how far apart two things lie, edge to edge (0 if they overlap)
 const apart = (n, o) => Math.max(0, n.x - (o.x + o.w), o.x - (n.x + n.w), n.y - (o.y + o.h), o.y - (n.y + n.h))
-// whether `o` lies above or below `n`, overlapping it across
-const over = (n, o) => Math.max(n.y - (o.y + o.h), o.y - (n.y + n.h)) >= 0 && Math.min(n.x + n.w, o.x + o.w) - Math.max(n.x, o.x) >= DESK.least
-// The page kept beside the one read is as it is, not faded with the rest;
-// nor is the line between them.
-function markBeside() {
-  if (!focused) beside = null
-  for (const [id, v] of views) v.el.classList.toggle('beside', id === beside?.id)
-  drawEdges()
-}
 // The window changing size (resized, full screen) while you read a page: the
 // page is read as a tab, so it becomes a tab of the new size (reflowed, still
 // at 100%, not scaled), centred, its name in view. Anything else you're
@@ -887,17 +850,7 @@ function setFocused(id) {
   if (focused) views.get(focused)?.el.classList.remove('focused')
   focused = id && state.nodes[id] ? id : null
   if (focused) views.get(focused).el.classList.add('focused')
-  markReading()
-  markBeside()
   document.body.classList.toggle('focusing', !!focused)
-}
-// What belongs to the page being read is seen as it is while the rest fades:
-// the notes stuck on it and the pieces cut from it.
-function markReading() {
-  for (const v of views.values()) v.el.classList.remove('on-focused')
-  if (!focused) return
-  for (const note of notesOn(focused)) views.get(note.id)?.el.classList.add('on-focused')
-  for (const e of state.edges) if (e.from === focused && e.kind === 'clip') views.get(e.to)?.el.classList.add('on-focused')
 }
 function endFocus() {
   if (focused) setFocused(null)
@@ -1472,7 +1425,6 @@ function addEdge(data) {
   state.edges.push(edge)
   bornAt.set(edge.id, performance.now())
   drawEdges()
-  if (edge.from === focused && edge.kind === 'clip') markReading() // cut from the page being read
   return edge
 }
 function removeNode(id) {
@@ -2435,7 +2387,7 @@ function renderEdges() {
     }
     const colour = edge.kind === 'clip' ? '' : lineOf(edge.from)
     if (d.colour !== colour) d.group.style.setProperty('--thread', (d.colour = colour))
-    const cls = `${edge.kind}${hotNodes.has(edge.from) || hotNodes.has(edge.to) ? ' hot' : ''}${beside?.edge === edge.id ? ' beside' : ''}`
+    const cls = `${edge.kind}${hotNodes.has(edge.from) || hotNodes.has(edge.to) ? ' hot' : ''}`
     if (d.cls !== cls) d.group.setAttribute('class', (d.cls = cls))
     const line = `M${g.x1},${g.y1} Q${g.mx},${g.my} ${g.x2},${g.y2}`
     if (d.line !== line) for (const path of d.group.querySelectorAll('path')) path.setAttribute('d', (d.line = line))
@@ -2708,13 +2660,6 @@ function beginGesture(e, data) {
 function nodePointerDown(e, id) {
   if (e.button !== 0 || space) return
   const n = state.nodes[id]
-  // the page kept beside the one read is a way back to it, not a page to use from there
-  if (focused && id === beside?.id && !e.target.closest('.bar, .rz')) {
-    e.preventDefault()
-    e.stopPropagation()
-    select(id)
-    return focusNode(id, { toggle: false })
-  }
   select(id)
   keysToCanvas() // a press on its name (or on it from far out) handles it as a thing: Backspace closes it
   front(id)
@@ -2905,13 +2850,11 @@ const NOTE_W = 200
 const notesOn = id => Object.values(state.nodes).filter(n => n.type === 'note' && n.on === id)
 function stick(note, target) {
   Object.assign(note, { on: target.id, dx: note.x - target.x, dy: note.y - target.y })
-  markReading()
 }
 function unstick(note) {
   delete note.on
   delete note.dx
   delete note.dy
-  markReading()
 }
 // keeps the notes on a thing with it as it moves or changes size
 function carry(target) {
