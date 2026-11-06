@@ -3264,7 +3264,11 @@ function setupBar() {
 function go(text) {
   input.value = ''
   const c = toWorld(innerWidth / 2, innerHeight / 2)
-  const node = addNode({ type: 'page', url: toUrl(text), title: '', ...spotFree(c.x - pageSize().w / 2, c.y - pageSize().h / 2, pageSize(), PLACE.room) })
+  // a new walk: in the middle of what you see if that is free, else in the
+  // nearest space a page's width clear of everything (forty times the gap
+  // between pages of a walk), so it starts a cluster of its own and doesn't
+  // read as part of the walk beside it
+  const node = addNode({ type: 'page', url: toUrl(text), title: '', ...spotFree(c.x - pageSize().w / 2, c.y - pageSize().h / 2, pageSize(), Math.max(PLACE.gap, pageSize().w)) })
   appear(node.id)
   select(node.id)
   closeBar(true)
