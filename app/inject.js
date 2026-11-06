@@ -74,9 +74,20 @@
     const ink = s[0]?.color && contrast(bg, s[0].color) >= 4.5 ? s[0].color : light(bg) > 0.18 ? 'rgb(29, 29, 31)' : 'rgb(255, 255, 255)'
     return { bg, ink }
   }
+  // The place the page says it is (its rel=canonical), if it says one: a page
+  // reached by an address with more on it (?ref=…, ?utm_…) is still that place.
+  function canonical() {
+    const href = document.querySelector('link[rel~="canonical"]')?.getAttribute('href')
+    try {
+      const u = href && new URL(href, here())
+      return u && /^https?:$/.test(u.protocol) ? u.href : undefined
+    } catch {
+      return undefined
+    }
+  }
   let lastMeta = ''
   function meta() {
-    const info = { url: here(), title: document.title || '', favicon: favicon(), ...paper() }
+    const info = { url: here(), title: document.title || '', favicon: favicon(), canonical: canonical(), ...paper() }
     if (document.readyState !== 'loading') tellText() // its document is whole, it has loaded, or it moved within itself
     const p = player()
     if (p) info.player = p

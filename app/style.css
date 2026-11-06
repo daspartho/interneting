@@ -100,6 +100,7 @@ body.busy, body.busy * { -webkit-user-select: none; user-select: none; }
 /* ------------------------------------------------------------------ nodes */
 
 /* things on the board are sheets: square-cornered, lying flat; lifted only while carried */
+.node.unsure { visibility: hidden; } /* loading unseen until it says where it is (app.js settle) */
 .node {
   position: absolute;
   isolation: isolate; /* (its tabs go under it, not under the table) */
