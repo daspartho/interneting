@@ -111,7 +111,7 @@ const TRAILHEADS = [
 // A page can't open alert/confirm dialogs: one would stop the whole canvas
 // until answered (a page calling alert() as it loads froze it).
 const PAGE_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-pointer-lock allow-presentation'
-const ALLOW = 'autoplay; fullscreen; clipboard-write; encrypted-media; picture-in-picture'
+const ALLOW = 'autoplay *; fullscreen *; clipboard-write *; encrypted-media *; picture-in-picture *' // (* : for wherever the page goes, not only the address it was opened at: a page that moves to https, or to another site, keeps them)
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // ------------------------------------------------------------------ helpers

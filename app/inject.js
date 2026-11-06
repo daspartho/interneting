@@ -136,12 +136,13 @@
   // history. In place only: a spot on this same page, and what the page does
   // by itself (a redirect as it loads, a site moving within itself).
   //
-  // A page with frames moves within itself too: a link that the page shows
-  // in one of its frames (a frameset's menu showing a page in its main
-  // frame, a link into one of its iframes, a frame's link to another page of
-  // its site) stays in the page, as a frame of a page in a tab would. A link
-  // to another site, or one that would replace the whole page, is another
-  // place, and opens beside.
+  // A frameset's frames are pages of its site laid side by side (a menu, the
+  // main page, a webring's bar): a link shown in one of them is another place
+  // too, and opens beside, as that page on its own (in a frame it is a page
+  // cut down, which can't, say, show its video full screen). The menu stays
+  // where it is, a thread from it to each place it led to. A page's own
+  // iframes are parts of it (a guestbook, a widget): a link of its site
+  // shown in one goes on in it, as in a tab.
   //
   // A navigation to another page that you set going (a script acting on your
   // click) opens beside, unless it is a frame moving within its own site; one
@@ -164,6 +165,14 @@
     }
   })
 
+  // whether a frame of this page is one of a frameset's (not an iframe)
+  function framed(w) {
+    try {
+      return w.frameElement?.tagName === 'FRAME'
+    } catch {
+      return false
+    }
+  }
   // Where the browser would show a link: this frame, the one it is in, the
   // whole page, the page's frame with the name the link gives (nearest
   // first: inside this frame, then anywhere in the page), or, if none has
@@ -285,8 +294,9 @@
       return
     }
     event.preventDefault()
-    // within the page: the page's own scripts still see the click, as in a tab
-    if (!quiet && there && (there === PAGE ? noHash(real) === noHash(pageAddress()) : siteOf(real) === siteOf(here()))) return show(there, real)
+    // in place, the page's own scripts still seeing the click, as in a tab:
+    // the whole page again, or a page of its site in one of its iframes
+    if (!quiet && there && (there === PAGE ? noHash(real) === noHash(pageAddress()) : !framed(there) && siteOf(real) === siteOf(here()))) return show(there, real)
     event.stopImmediatePropagation()
     openBeside(a, real, quiet)
   }
