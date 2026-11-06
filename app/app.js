@@ -1326,9 +1326,14 @@ function addEdge(data) {
 function removeNode(id) {
   const gone = state.nodes[id]
   if (!gone) return
-  const ghost = gone.type === 'page' && between(id) ? addNode({ type: 'ghost', url: gone.url, title: gone.title, favicon: gone.favicon, bg: gone.bg, z: gone.z, x: Math.round(gone.x + (gone.w - GHOST.w) / 2), y: Math.round(gone.y + (gone.h - GHOST.h) / 2), ...GHOST, was: { w: gone.w, h: gone.h } }) : null
+  const from = gone.type === 'page' && between(id) && state.nodes[state.edges.find(e => e.to === id && state.nodes[e.from]).from]
+  const side = from && sideOf(from, gone)
+  const at = from && ghostAt(gone, side)
+  const closing = from && closeUp(id, from.id, at, side, gone)
+  const ghost = from ? addNode({ type: 'ghost', url: gone.url, title: gone.title, favicon: gone.favicon, bg: gone.bg, z: gone.z, ...at, ...GHOST, was: { w: gone.w, h: gone.h } }) : null
   drop(id, ghost?.id)
   if (ghost) appear(ghost.id)
+  if (closing?.size) slide(closing)
   for (let g; (g = Object.values(state.nodes).find(n => n.type === 'ghost' && !between(n.id))); ) drop(g.id) // (one left at an end goes)
   drawEdges()
   knowDoors()
@@ -1345,6 +1350,51 @@ function drop(id, into) {
   if (selected === id) selected = null
   if (focused === id) setFocused(null)
   if (into) for (const e of state.edges) if (e.to === into) markTaken(e.from, new Set([into]))
+}
+// A ghost takes up only its own room: it lies where the page's thread came
+// in (its pin level with the pins of the pages either side), and what the
+// page led on to moves back up by the room the page no longer needs, as far
+// as it can without running into anything else.
+function sideOf(from, n) {
+  const dx = centreOf(n).x - centreOf(from).x
+  const dy = centreOf(n).y - centreOf(from).y
+  return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) || 1 }
+}
+function ghostAt(n, side) {
+  const level = n.y - NAME / 2 - GHOST.h / 2 // (its pin where the page's was)
+  if (side.x > 0) return { x: n.x, y: Math.round(level) }
+  if (side.x < 0) return { x: n.x + n.w - GHOST.w, y: Math.round(level) }
+  return { x: Math.round(n.x + n.w / 2 - GHOST.w / 2), y: Math.round(side.y > 0 ? level : n.y + n.h - GHOST.h) }
+}
+// the room a page frees, shrunk to a ghost at `g`, on the side its walk goes on
+function freedBy(n, g, side) {
+  if (side.x > 0) return { dx: -(n.x + n.w - (g.x + GHOST.w)), dy: 0 }
+  if (side.x < 0) return { dx: g.x - n.x, dy: 0 }
+  if (side.y > 0) return { dx: 0, dy: -(n.y + n.h - (g.y + GHOST.h)) }
+  return { dx: 0, dy: g.y - (n.y - NAME) }
+}
+// what a thing leads on to, and not back to where it came from
+function onward(id, from) {
+  const back = walkOf(from, id)
+  return [...walkOf(id)].filter(o => o !== id && !back.has(o) && state.nodes[o].on !== id) // (a note stuck on it is left where it was)
+}
+function closeUp(id, from, at, side, n) {
+  const going = onward(id, from)
+  if (!going.length) return null
+  const freed = freedBy(n, at, side)
+  const ghost = { type: 'ghost', ...at, ...GHOST }
+  const still = [ghost, ...Object.values(state.nodes).filter(o => o.id !== id && !going.includes(o.id))]
+  for (const f of [1, 0.75, 0.5, 0.25]) {
+    const dx = Math.round(freed.dx * f)
+    const dy = Math.round(freed.dy * f)
+    const fits = going.every(g => {
+      const o = state.nodes[g]
+      const there = { ...o, x: o.x + dx, y: o.y + dy }
+      return !still.some(s => overlap(there, s, roomBetween(there, s, DESK.gap / 2)))
+    })
+    if (fits) return new Map(going.map(g => [g, { dx, dy }]))
+  }
+  return null
 }
 // A page closed from the middle of a trail (one led to it and it led on)
 // leaves its name where it lay, so the trail still shows how you came to what
@@ -1370,8 +1420,17 @@ function reopen(id) {
   const g = state.nodes[id]
   const w = g.was?.w || pageSize().w
   const h = g.was?.h || pageSize().h
-  const page = addNode({ type: 'page', url: g.url, title: g.title, favicon: g.favicon, bg: g.bg, x: Math.round(g.x + (g.w - w) / 2), y: Math.round(g.y + (g.h - h) / 2), w, h })
+  const from = state.nodes[state.edges.find(e => e.to === id && state.nodes[e.from])?.from]
+  const side = from ? sideOf(from, g) : { x: 1, y: 0 }
+  // the page opens out from where its ghost is pinned, away from where it was
+  // come to from; what it led on to moves back out of its way
+  const box = { type: 'page', w, h, x: Math.round(side.x > 0 ? g.x : side.x < 0 ? g.x + g.w - w : g.x + g.w / 2 - w / 2), y: Math.round(side.y < 0 ? g.y + g.h - h : g.y + g.h / 2 + NAME / 2) }
+  const freed = freedBy(box, g, side)
+  const moved = from ? new Map(onward(id, from.id).map(o => [o, { dx: -freed.dx, dy: -freed.dy }])) : new Map()
+  const page = addNode({ type: 'page', url: g.url, title: g.title, favicon: g.favicon, bg: g.bg, x: box.x, y: box.y, w, h })
   drop(id, page.id)
+  slide(moved)
+  slide(makeRoom(page, walkOf(page.id), PLACE.room)) // (anything else there makes way)
   drawEdges()
   appear(page.id)
   commit({ kind: 'open', node: page.id, url: page.url })
@@ -1408,7 +1467,7 @@ function close(id) {
   const back = (reading || alone) && (from?.id || Object.values(state.nodes).filter(p => p.type === 'page' && p.id !== id && p.seen).sort((a, b) => b.seen - a.seen)[0]?.id)
   const gone = () => removeNode(id)
   v.closing = true // (from here it is going: nothing keeps it in view beside another)
-  closeRow(id) // (first, so that going back frames things where they will be)
+  if (!(n.type === 'page' && between(id))) closeRow(id) // (first, so that going back frames things where they will be; a page leaving a ghost closes up its own way)
   if (back) {
     select(back)
     focusNode(back, { toggle: false })
@@ -1417,7 +1476,8 @@ function close(id) {
   // back into where it came from (the page it was opened or cut from), the
   // way it grew out of it; things with no origin just shrink where they are,
   // as does a page that leaves a ghost (into its ghost)
-  const to = from && !(n.type === 'page' && between(id)) ? exitPoint(from, centreOf(from), centreOf(n), 0) : centreOf(n)
+  const ghosting = from && n.type === 'page' && between(id)
+  const to = ghosting ? (g => ({ x: g.x + GHOST.w / 2, y: g.y + GHOST.h / 2 }))(ghostAt(n, sideOf(from, n))) : from ? exitPoint(from, centreOf(from), centreOf(n), 0) : centreOf(n)
   v.el.style.pointerEvents = 'none'
   v.el.animate(
     [
